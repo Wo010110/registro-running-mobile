@@ -1,0 +1,16 @@
+# Base: lints recomendados de Flutter.
+include: package:flutter_lints/flutter.yaml
+
+linter:
+  rules:
+    - always_declare_return_types
+    - avoid_void_async
+    - cancel_subscriptions
+    - close_sinks
+    - only_throw_errors
+    - prefer_final_locals
+    - prefer_single_quotes
+    - unawaited_futures
+    - unnecessary_lambdas
+    - prefer_const_constructors
+    - directives_ordering
