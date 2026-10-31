@@ -1,5 +1,6 @@
 # Lanza la app en el KM7 apuntando a la API local de esta laptop (puerto 8000).
 $ErrorActionPreference = 'Stop'
+Set-Location $PSScriptRoot
 $env:Path += ";C:\Users\osori\AppData\Local\Android\Sdk\platform-tools"
 
 # IP LAN: adaptador físico activo (wifi o ethernet) con gateway. Se excluyen

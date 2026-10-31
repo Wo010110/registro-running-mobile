@@ -4,9 +4,9 @@ import 'package:intl/intl.dart';
 
 import '../core/carreras_db.dart';
 import '../providers/grabacion_provider.dart';
-import '../screens/grabando_screen.dart';
+import '../screens/actividad_screen.dart';
 import '../screens/resumen_screen.dart';
-import '../theme/app_colors.dart';
+import 'dialogo_hey.dart';
 
 enum _Opcion { continuar, terminar, descartar }
 
@@ -30,9 +30,9 @@ Future<void> avisarActividadPendiente(
       case _Opcion.continuar:
         await notifier.continuar(pendiente);
         if (!context.mounted) return;
-        await Navigator.of(
-          context,
-        ).push(MaterialPageRoute<void>(builder: (_) => const GrabandoScreen()));
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(builder: (_) => const ActividadScreen()),
+        );
         return;
       case _Opcion.terminar:
         await notifier.terminarPendiente(pendiente);
@@ -42,26 +42,15 @@ Future<void> avisarActividadPendiente(
         ).push(MaterialPageRoute<void>(builder: (_) => const ResumenScreen()));
         return;
       case _Opcion.descartar:
-        final seguro = await showDialog<bool>(
-          context: context,
-          builder: (_) => AlertDialog(
-            title: const Text('¿Descartar la actividad?'),
-            content: const Text(
-              'Se borrará del teléfono y no se podrá recuperar.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                child: const Text('Cancelar'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.of(context).pop(true),
-                child: const Text('Descartar'),
-              ),
-            ],
-          ),
+        final seguro = await confirmarHey(
+          context,
+          titulo: '¿Descartar la actividad?',
+          mensaje: 'Se borrará del teléfono y no se podrá recuperar.',
+          confirmar: 'Descartar',
+          cancelar: 'Cancelar',
+          destructivo: true,
         );
-        if (seguro ?? false) {
+        if (seguro) {
           await notifier.descartarPendiente(pendiente);
           return;
         }
@@ -77,26 +66,28 @@ class _Aviso extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = AppColors.of(context);
     final inicio = DateFormat(
       "d 'de' MMMM, HH:mm",
       'es',
     ).format(carrera.inicioUtc.toLocal());
-    return AlertDialog(
-      title: const Text('Tienes una actividad sin terminar'),
-      content: Text('${carrera.tipo.etiqueta} · $inicio'),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(_Opcion.descartar),
-          child: Text('Descartar', style: TextStyle(color: c.errorTexto)),
-        ),
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(_Opcion.terminar),
-          child: const Text('Terminar y guardar'),
-        ),
-        FilledButton(
+    return DialogoHey(
+      titulo: 'Tienes una actividad sin terminar',
+      mensaje: '${carrera.tipo.etiqueta} · $inicio',
+      acciones: [
+        BotonDialogo(
+          'Continuar',
           onPressed: () => Navigator.of(context).pop(_Opcion.continuar),
-          child: const Text('Continuar'),
+        ),
+        BotonDialogo(
+          'Terminar y guardar',
+          secundario: true,
+          onPressed: () => Navigator.of(context).pop(_Opcion.terminar),
+        ),
+        BotonDialogo(
+          'Descartar',
+          secundario: true,
+          destructivo: true,
+          onPressed: () => Navigator.of(context).pop(_Opcion.descartar),
         ),
       ],
     );

@@ -13,15 +13,19 @@ class AppColors {
     required this.fondo,
     required this.superficie,
     required this.borde,
+    required this.sombra,
     required this.divisor,
     required this.textoPrincipal,
     required this.textoSecundario,
     required this.textoTenue,
     required this.textoDeshabilitado,
     required this.primario,
+    required this.primarioSuave,
+    required this.medalla,
     required this.accion,
     required this.sobreAccion,
     required this.exito,
+    required this.advertencia,
     required this.error,
     required this.errorTexto,
   });
@@ -39,6 +43,9 @@ class AppColors {
   /// Contorno de tarjetas y campos.
   final Color borde;
 
+  /// Sombra de lo que flota sobre el mapa (contenedores, botones, títulos).
+  final Color sombra;
+
   /// Línea entre filas de una lista.
   final Color divisor;
 
@@ -50,6 +57,12 @@ class AppColors {
   /// Color primario del tema: foco de campos, indicadores.
   final Color primario;
 
+  /// Tinte translúcido del primario: fichas, íconos en círculo, barras vacías.
+  final Color primarioSuave;
+
+  /// Dorado de medallas y récords.
+  final Color medalla;
+
   /// Fondo de los botones de acción.
   final Color accion;
 
@@ -57,6 +70,9 @@ class AppColors {
   final Color sobreAccion;
 
   final Color exito;
+
+  /// Señal o estado intermedio (amarillo).
+  final Color advertencia;
 
   /// Relleno y bordes de error.
   final Color error;
@@ -68,15 +84,19 @@ class AppColors {
     fondo: Color(0xFF0B0F14),
     superficie: Color(0xFF151B23),
     borde: Color(0xFF2A333F),
+    sombra: Color(0x66000000),
     divisor: Color(0xFF1E2630),
     textoPrincipal: Color(0xFFF5F7FA),
     textoSecundario: Color(0xFFB4BDC9),
     textoTenue: Color(0xFF8893A1),
     textoDeshabilitado: Color(0xFF55606E),
     primario: Color(0xFF2F6BFF),
+    primarioSuave: Color(0x262F6BFF),
+    medalla: Color(0xFFF5B83D),
     accion: Color(0xFF2F6BFF),
     sobreAccion: Color(0xFFFFFFFF),
     exito: Color(0xFF34C77B),
+    advertencia: Color(0xFFF5C542),
     error: Color(0xFFE5484D),
     errorTexto: Color(0xFFFF8A8E),
   );
@@ -85,15 +105,19 @@ class AppColors {
     fondo: Color(0xFFF5F5F7),
     superficie: Color(0xFFFFFFFF),
     borde: Color(0xFFD9DDE3),
+    sombra: Color(0x33000000),
     divisor: Color(0xFFE6E8EC),
     textoPrincipal: Color(0xFF0B0F14),
     textoSecundario: Color(0xFF47515E),
     textoTenue: Color(0xFF6B7584),
     textoDeshabilitado: Color(0xFFA3ABB7),
     primario: Color(0xFF2F6BFF),
+    primarioSuave: Color(0x1A2F6BFF),
+    medalla: Color(0xFFD99A12),
     accion: Color(0xFF2F6BFF),
     sobreAccion: Color(0xFFFFFFFF),
     exito: Color(0xFF1F9D5C),
+    advertencia: Color(0xFFE0A100),
     error: Color(0xFFD92D33),
     errorTexto: Color(0xFFB4232A),
   );

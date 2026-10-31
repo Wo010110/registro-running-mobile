@@ -12,6 +12,33 @@ ThemeData construirTema(AppColors c, Brightness brillo) {
     useMaterial3: true,
     brightness: brillo,
     scaffoldBackgroundColor: c.fondo,
+    fontFamily: 'Barlow',
+    // Barlow en Medium es el mínimo: letra firme, sin pesos finos.
+    textTheme: const TextTheme(
+      displayLarge: TextStyle(fontWeight: FontWeight.w800),
+      displayMedium: TextStyle(fontWeight: FontWeight.w800),
+      displaySmall: TextStyle(fontWeight: FontWeight.w800),
+      headlineLarge: TextStyle(fontWeight: FontWeight.w800),
+      headlineMedium: TextStyle(fontWeight: FontWeight.w800),
+      headlineSmall: TextStyle(fontWeight: FontWeight.w800),
+      titleLarge: TextStyle(fontWeight: FontWeight.w800),
+      titleMedium: TextStyle(fontWeight: FontWeight.w700),
+      titleSmall: TextStyle(fontWeight: FontWeight.w700),
+      bodyLarge: TextStyle(fontWeight: FontWeight.w600),
+      bodyMedium: TextStyle(fontWeight: FontWeight.w600),
+      bodySmall: TextStyle(fontWeight: FontWeight.w500),
+      labelLarge: TextStyle(fontWeight: FontWeight.w700),
+      labelMedium: TextStyle(fontWeight: FontWeight.w700),
+      labelSmall: TextStyle(fontWeight: FontWeight.w600),
+    ),
+    dialogTheme: DialogThemeData(
+      backgroundColor: c.superficie,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(28),
+        side: BorderSide(color: c.borde),
+      ),
+    ),
     colorScheme: ColorScheme(
       brightness: brillo,
       primary: c.primario,

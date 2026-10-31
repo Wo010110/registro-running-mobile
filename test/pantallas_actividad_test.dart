@@ -92,20 +92,21 @@ void main() {
       ),
     );
     await tester.pumpWidget(_app(notifier, const ResumenScreen()));
-    await tester.pump();
+    await tester.pump(const Duration(seconds: 2));
 
     expect(find.text('5,01 km'), findsOneWidget);
     expect(find.text('00:25:00'), findsOneWidget);
     expect(find.text('4:59 /km'), findsOneWidget);
-    expect(find.textContaining('Caminar · '), findsOneWidget);
+    expect(find.textContaining('CAMINAR · '), findsOneWidget);
+    // La lista de parciales está dentro del contenedor, que se desplaza.
+    await tester.scrollUntilVisible(find.text('Km 2'), 100);
     expect(find.text('Km 1'), findsOneWidget);
     expect(find.text('5:00 /km'), findsOneWidget);
     expect(find.text('Km 2'), findsOneWidget);
-    expect(find.text('Guardar'), findsOneWidget);
-    expect(find.text('En movimiento'), findsNothing);
+    expect(find.text('GUARDAR'), findsOneWidget);
+    expect(find.text('EN MOVIMIENTO'), findsNothing);
 
-    await tester.scrollUntilVisible(find.text('Descartar'), 200);
-    await tester.tap(find.text('Descartar'));
+    await tester.tap(find.text('DESCARTAR'));
     await tester.pumpAndSettle();
     expect(find.text('¿Descartar la actividad?'), findsOneWidget);
     await tester.tap(find.text('Cancelar'));
@@ -135,9 +136,9 @@ void main() {
       ),
     );
     await tester.pumpWidget(_app(notifier, const ResumenScreen()));
-    await tester.pump();
+    await tester.pump(const Duration(seconds: 2));
     expect(find.text('00:30:00'), findsOneWidget);
-    expect(find.text('En movimiento'), findsOneWidget);
+    expect(find.text('EN MOVIMIENTO'), findsOneWidget);
     expect(find.text('00:25:00'), findsOneWidget);
   });
 

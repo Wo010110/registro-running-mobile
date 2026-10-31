@@ -9,6 +9,9 @@ import '../theme/app_colors.dart';
 
 const double _zoomMax = 20;
 const double _zoomGrabando = 17;
+
+/// Zoom al empezar la actividad: lo más cerca que permiten los mosaicos.
+const double _zoomCerca = 19;
 const double _grosorLinea = 7;
 
 /// Mapa con la línea del recorrido. [enVivo]: sigue la posición hasta que el
@@ -19,18 +22,33 @@ class MapaRecorrido extends StatefulWidget {
     required this.ruta,
     this.posicion,
     this.enVivo = false,
+    this.atribucionArriba = false,
+    this.acercar = false,
   });
 
   final List<PuntoGps> ruta;
   final PuntoGps? posicion;
   final bool enVivo;
 
+  /// Sube el botón "i" y el de recentrar a la esquina superior derecha, para
+  /// cuando hay paneles flotantes abajo.
+  final bool atribucionArriba;
+
+  /// Acerca el mapa al punto GPS con una animación de zoom; se activa al
+  /// empezar la actividad.
+  final bool acercar;
+
   @override
   State<MapaRecorrido> createState() => _MapaRecorridoState();
 }
 
-class _MapaRecorridoState extends State<MapaRecorrido> {
+class _MapaRecorridoState extends State<MapaRecorrido>
+    with SingleTickerProviderStateMixin {
   final _mapa = MapController();
+  late final AnimationController _zoomAnim;
+  var _zoomDesde = _zoomGrabando;
+  var _acercarPendiente = false;
+  LatLng? _ultimaPos;
   var _listo = false;
   var _seguir = true;
   var _centrado = false;
@@ -39,6 +57,10 @@ class _MapaRecorridoState extends State<MapaRecorrido> {
   @override
   void initState() {
     super.initState();
+    _zoomAnim = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1600),
+    )..addListener(_pasoZoom);
     _actualizarLinea();
   }
 
@@ -46,13 +68,37 @@ class _MapaRecorridoState extends State<MapaRecorrido> {
   void didUpdateWidget(MapaRecorrido anterior) {
     super.didUpdateWidget(anterior);
     _actualizarLinea();
-    if (widget.enVivo && _seguir) _centrar();
+    _ultimaPos = _actual ?? _ultimaPos;
+    if (widget.acercar && !anterior.acercar) _acercarPendiente = true;
+    if (_acercarPendiente) _acercar();
+    if (widget.enVivo && _seguir && !_zoomAnim.isAnimating) _centrar();
   }
 
   @override
   void dispose() {
+    _zoomAnim.dispose();
     _mapa.dispose();
     super.dispose();
+  }
+
+  /// Zoom suave hasta [_zoomCerca], siguiendo el punto GPS. Al iniciar la
+  /// actividad la posición queda vacía hasta el primer punto del servicio:
+  /// se usa la última conocida y, si no hay ninguna, se reintenta en cada
+  /// actualización.
+  void _acercar() {
+    final centro = _actual ?? _ultimaPos;
+    if (!_listo || centro == null) return;
+    _acercarPendiente = false;
+    _zoomDesde = _mapa.camera.zoom;
+    _seguir = true;
+    _zoomAnim.forward(from: 0);
+  }
+
+  void _pasoZoom() {
+    final centro = _actual ?? _ultimaPos;
+    if (!_listo || centro == null) return;
+    final t = Curves.easeInOutCubic.transform(_zoomAnim.value);
+    _mapa.move(centro, _zoomDesde + (_zoomCerca - _zoomDesde) * t);
   }
 
   // shortcut: reconvierte toda la ruta cuando crece; con ~5400 puntos es
@@ -108,7 +154,12 @@ class _MapaRecorridoState extends State<MapaRecorrido> {
   void _centrar() {
     final actual = _actual;
     if (!_listo || actual == null) return;
-    _mapa.move(actual, _centrado ? _mapa.camera.zoom : _zoomGrabando);
+    _mapa.move(
+      actual,
+      _centrado
+          ? _mapa.camera.zoom
+          : (widget.acercar ? _zoomCerca : _zoomGrabando),
+    );
     _centrado = true;
   }
 
@@ -123,7 +174,9 @@ class _MapaRecorridoState extends State<MapaRecorrido> {
           options: MapOptions(
             initialCenter:
                 _actual ?? (_linea.isEmpty ? const LatLng(0, 0) : _linea.last),
-            initialZoom: _actual == null && _linea.isEmpty ? 2 : _zoomGrabando,
+            initialZoom: _actual == null && _linea.isEmpty
+                ? 2
+                : (widget.acercar ? _zoomCerca : _zoomGrabando),
             maxZoom: _zoomMax,
             initialCameraFit: fija
                 ? CameraFit.coordinates(
@@ -133,15 +186,19 @@ class _MapaRecorridoState extends State<MapaRecorrido> {
                   )
                 : null,
             backgroundColor: c.superficie,
-            interactionOptions: const InteractionOptions(
-              flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
+            // Grabando (acercar) el mapa queda fijo al punto: solo se permite
+            // el zoom con los dedos, así un arrastre sin querer no lo suelta.
+            interactionOptions: InteractionOptions(
+              flags: widget.acercar
+                  ? InteractiveFlag.pinchZoom | InteractiveFlag.doubleTapZoom
+                  : InteractiveFlag.all & ~InteractiveFlag.rotate,
             ),
             onMapReady: () {
               _listo = true;
               if (widget.enVivo) _centrar();
             },
             onPositionChanged: (camara, porGesto) {
-              if (porGesto && _seguir && widget.enVivo) {
+              if (porGesto && _seguir && widget.enVivo && !widget.acercar) {
                 setState(() => _seguir = false);
               }
             },
@@ -226,8 +283,12 @@ class _MapaRecorridoState extends State<MapaRecorrido> {
         // La atribución es obligatoria (licencias de OSM y MapTiler); queda
         // en un botón "i" que abre la lista de fuentes, como hace Strava.
         Positioned(
-          left: 8,
-          bottom: 8,
+          left: widget.atribucionArriba ? null : 8,
+          right: widget.atribucionArriba ? 12 : null,
+          top: widget.atribucionArriba
+              ? MediaQuery.paddingOf(context).top + 12
+              : null,
+          bottom: widget.atribucionArriba ? null : 8,
           child: Material(
             color: c.superficie,
             shape: const CircleBorder(),
@@ -248,7 +309,10 @@ class _MapaRecorridoState extends State<MapaRecorrido> {
         if (widget.enVivo && !_seguir)
           Positioned(
             right: 12,
-            bottom: 12,
+            top: widget.atribucionArriba
+                ? MediaQuery.paddingOf(context).top + 60
+                : null,
+            bottom: widget.atribucionArriba ? null : 12,
             child: FloatingActionButton.small(
               tooltip: 'Recentrar',
               backgroundColor: c.accion,
