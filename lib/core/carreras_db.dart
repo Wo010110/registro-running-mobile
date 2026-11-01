@@ -279,6 +279,17 @@ class CarrerasDb {
     return filas.isEmpty ? null : CarreraLocal.desdeFila(filas.first);
   }
 
+  /// Actividades cerradas de [origen], de la más reciente a la más antigua.
+  Future<List<CarreraLocal>> terminadas({String origen = origenApp}) async {
+    final filas = await _db.query(
+      'carreras',
+      where: 'estado = ? AND origen = ?',
+      whereArgs: [EstadoCarrera.terminada.name, origen],
+      orderBy: 'inicio_utc DESC',
+    );
+    return [for (final f in filas) CarreraLocal.desdeFila(f)];
+  }
+
   /// Borra la carrera con sus puntos y pausas.
   Future<void> descartar(String carreraId) =>
       _db.delete('carreras', where: 'id = ?', whereArgs: [carreraId]);

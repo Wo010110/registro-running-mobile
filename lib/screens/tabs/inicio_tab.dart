@@ -2,12 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hugeicons/hugeicons.dart';
 
-import '../../core/datos_ejemplo.dart';
+import '../../core/carreras_db.dart';
+import '../../core/formato.dart';
+import '../../core/historial.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/grabacion_provider.dart';
+import '../../providers/historial_provider.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/tarjeta.dart';
-import '../../widgets/trazo_ruta.dart';
+import '../../widgets/tarjeta_actividad.dart';
 import '../actividad_screen.dart';
 
 class InicioTab extends ConsumerWidget {
@@ -18,8 +21,11 @@ class InicioTab extends ConsumerWidget {
     final c = AppColors.of(context);
     final nombre = ref.watch(authProvider.select((a) => a.user?.displayName));
     final enCurso = ref.watch(grabacionProvider.select((g) => g.enCurso));
-    final ultima = actividadesEjemplo.first;
-    final maximo = semanaEjemplo.reduce((a, b) => a > b ? a : b);
+    final historial = ref.watch(historialProvider).value ?? <CarreraLocal>[];
+    final ultima = historial.isEmpty ? null : historial.first;
+    final semana = kmPorDiaSemana(historial, DateTime.now());
+    final totalSemana = semana.fold(0.0, (a, b) => a + b);
+    final maximo = semana.reduce((a, b) => a > b ? a : b);
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
       children: [
@@ -79,7 +85,7 @@ class InicioTab extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Text(
-                    '23,7',
+                    formatearKmUno(totalSemana),
                     style: TextStyle(
                       color: c.textoPrincipal,
                       fontSize: 44,
@@ -103,18 +109,18 @@ class InicioTab extends ConsumerWidget {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    for (var i = 0; i < semanaEjemplo.length; i++)
+                    for (var i = 0; i < semana.length; i++)
                       Expanded(
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.end,
                           children: [
                             Container(
                               width: 14,
-                              height: semanaEjemplo[i] == 0
+                              height: semana[i] == 0
                                   ? 6
-                                  : 8 + 56 * semanaEjemplo[i] / maximo,
+                                  : 8 + 56 * semana[i] / maximo,
                               decoration: BoxDecoration(
-                                color: semanaEjemplo[i] == 0
+                                color: semana[i] == 0
                                     ? c.divisor
                                     : c.primario,
                                 borderRadius: BorderRadius.circular(7),
@@ -138,50 +144,10 @@ class InicioTab extends ConsumerWidget {
           ),
         ),
         const TituloSeccion('Última actividad', accion: 'Ver todas'),
-        Tarjeta(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const IconoCirculo(
-                    icono: HugeIcons.strokeRoundedRunningShoes,
-                    tam: 40,
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          ultima.titulo,
-                          style: TextStyle(
-                            color: c.textoPrincipal,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        Text(
-                          ultima.fecha,
-                          style: TextStyle(color: c.textoTenue, fontSize: 13),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 14),
-              TrazoRuta(puntos: ultima.trazo),
-              const SizedBox(height: 14),
-              Row(
-                children: [
-                  _Dato('Distancia', '${ultima.km} km'),
-                  _Dato('Tiempo', ultima.tiempo),
-                  _Dato('Ritmo', '${ultima.ritmo} /km'),
-                ],
-              ),
-            ],
-          ),
-        ),
+        if (ultima == null)
+          const SinActividades()
+        else
+          TarjetaActividad(carrera: ultima),
         const TituloSeccion('Tu meta del mes'),
         Tarjeta(
           child: Column(
@@ -220,38 +186,6 @@ class InicioTab extends ConsumerWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _Dato extends StatelessWidget {
-  const _Dato(this.etiqueta, this.valor);
-
-  final String etiqueta;
-  final String valor;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = AppColors.of(context);
-    return Expanded(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(etiqueta, style: TextStyle(color: c.textoTenue, fontSize: 12)),
-          const SizedBox(height: 2),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text(
-              valor,
-              style: TextStyle(
-                color: c.textoPrincipal,
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

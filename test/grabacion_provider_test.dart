@@ -108,6 +108,9 @@ class _DbFalla implements CarrerasDb {
   Future<CarreraLocal?> carreraSinTerminar({String origen = origenApp}) =>
       real.carreraSinTerminar(origen: origen);
   @override
+  Future<List<CarreraLocal>> terminadas({String origen = origenApp}) =>
+      real.terminadas(origen: origen);
+  @override
   Future<void> descartar(String carreraId) => real.descartar(carreraId);
 }
 

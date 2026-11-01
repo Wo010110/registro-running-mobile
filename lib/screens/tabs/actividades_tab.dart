@@ -1,18 +1,26 @@
 import 'package:flutter/material.dart';
-import 'package:hugeicons/hugeicons.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/datos_ejemplo.dart';
 import '../../models/tipo_actividad.dart';
+import '../../providers/historial_provider.dart';
 import '../../theme/app_colors.dart';
-import '../../widgets/tarjeta.dart';
-import '../../widgets/trazo_ruta.dart';
+import '../../widgets/tarjeta_actividad.dart';
 
-class ActividadesTab extends StatelessWidget {
+class ActividadesTab extends ConsumerStatefulWidget {
   const ActividadesTab({super.key});
+
+  @override
+  ConsumerState<ActividadesTab> createState() => _ActividadesTabState();
+}
+
+class _ActividadesTabState extends ConsumerState<ActividadesTab> {
+  /// null = todas.
+  TipoActividad? _filtro;
 
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
+    final historial = ref.watch(historialProvider);
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
       children: [
@@ -25,124 +33,93 @@ class ActividadesTab extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
-        const Row(
+        Row(
           children: [
-            _Ficha('Todas', activa: true),
-            SizedBox(width: 8),
-            _Ficha('Correr'),
-            SizedBox(width: 8),
-            _Ficha('Caminar'),
+            _Ficha(
+              'Todas',
+              activa: _filtro == null,
+              alTocar: () => setState(() => _filtro = null),
+            ),
+            for (final t in TipoActividad.values) ...[
+              const SizedBox(width: 8),
+              _Ficha(
+                t.etiqueta,
+                activa: _filtro == t,
+                alTocar: () => setState(() => _filtro = t),
+              ),
+            ],
           ],
         ),
         const SizedBox(height: 16),
-        for (final a in actividadesEjemplo) ...[
-          Tarjeta(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    IconoCirculo(
-                      icono: a.tipo == TipoActividad.correr
-                          ? HugeIcons.strokeRoundedRunningShoes
-                          : HugeIcons.strokeRoundedRoute01,
-                      tam: 40,
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            a.titulo,
-                            style: TextStyle(
-                              color: c.textoPrincipal,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          Text(
-                            '${a.tipo.etiqueta} · ${a.fecha}',
-                            style: TextStyle(color: c.textoTenue, fontSize: 13),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+        ...historial.when(
+          data: (todas) {
+            final lista = [
+              for (final a in todas)
+                if (_filtro == null || a.tipo == _filtro) a,
+            ];
+            if (lista.isEmpty) {
+              return [
+                SinActividades(
+                  texto: todas.isEmpty
+                      ? null
+                      : 'No hay actividades de este tipo todavía.',
                 ),
-                const SizedBox(height: 14),
-                TrazoRuta(puntos: a.trazo, alto: 96),
-                const SizedBox(height: 14),
-                Row(
-                  children: [
-                    _Dato('Distancia', '${a.km} km'),
-                    _Dato('Tiempo', a.tiempo),
-                    _Dato('Ritmo', '${a.ritmo} /km'),
-                  ],
+              ];
+            }
+            return [
+              for (final a in lista) ...[
+                TarjetaActividad(
+                  key: ValueKey(a.id),
+                  carrera: a,
+                  alto: 96,
                 ),
+                const SizedBox(height: 12),
               ],
+            ];
+          },
+          loading: () => const [
+            Padding(
+              padding: EdgeInsets.symmetric(vertical: 32),
+              child: Center(child: CircularProgressIndicator()),
             ),
-          ),
-          const SizedBox(height: 12),
-        ],
+          ],
+          error: (_, _) => [
+            const SinActividades(
+              texto: 'No se pudieron leer las actividades guardadas.',
+            ),
+          ],
+        ),
       ],
     );
   }
 }
 
 class _Ficha extends StatelessWidget {
-  const _Ficha(this.texto, {this.activa = false});
+  const _Ficha(this.texto, {required this.activa, required this.alTocar});
 
   final String texto;
   final bool activa;
+  final VoidCallback alTocar;
 
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: BoxDecoration(
-        color: activa ? c.accion : c.superficie,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: activa ? c.accion : c.borde),
-      ),
-      child: Text(
-        texto,
-        style: TextStyle(
-          color: activa ? c.sobreAccion : c.textoSecundario,
-          fontWeight: FontWeight.w600,
+    return GestureDetector(
+      onTap: alTocar,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: activa ? c.accion : c.superficie,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: activa ? c.accion : c.borde),
         ),
-      ),
-    );
-  }
-}
-
-class _Dato extends StatelessWidget {
-  const _Dato(this.etiqueta, this.valor);
-
-  final String etiqueta;
-  final String valor;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = AppColors.of(context);
-    return Expanded(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(etiqueta, style: TextStyle(color: c.textoTenue, fontSize: 12)),
-          const SizedBox(height: 2),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text(
-              valor,
-              style: TextStyle(
-                color: c.textoPrincipal,
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
+        child: Text(
+          texto,
+          style: TextStyle(
+            color: activa ? c.sobreAccion : c.textoSecundario,
+            fontWeight: FontWeight.w600,
           ),
-        ],
+        ),
       ),
     );
   }
