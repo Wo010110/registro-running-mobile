@@ -191,7 +191,7 @@ class _HojaModoState extends ConsumerState<_HojaModo> {
               _fila(
                 'Al terminar',
                 i.alTerminar.etiqueta,
-                _Segmentos<AlTerminarIntervalos>(
+                SegmentosHey<AlTerminarIntervalos>(
                   opciones: [
                     for (final a in AlTerminarIntervalos.values)
                       (a, a.etiqueta),
@@ -232,7 +232,7 @@ class _HojaModoState extends ConsumerState<_HojaModo> {
               _fila(
                 'Al llegar',
                 m.alLlegar.etiqueta,
-                _Segmentos<AlLlegarMeta>(
+                SegmentosHey<AlLlegarMeta>(
                   opciones: [
                     for (final a in AlLlegarMeta.values) (a, a.etiqueta),
                   ],
@@ -347,8 +347,9 @@ class _Fila extends StatelessWidget {
 }
 
 /// Selector de una línea con todas las opciones juntas.
-class _Segmentos<T> extends StatelessWidget {
-  const _Segmentos({
+class SegmentosHey<T> extends StatelessWidget {
+  const SegmentosHey({
+    super.key,
     required this.opciones,
     required this.actual,
     required this.onCambio,
@@ -435,7 +436,7 @@ class _EditorMedida extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _Segmentos<Medida>(
+        SegmentosHey<Medida>(
           opciones: [
             for (final o in opciones)
               (o, o == Medida.distancia ? 'Distancia' : 'Tiempo'),

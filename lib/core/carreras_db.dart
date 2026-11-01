@@ -27,6 +27,9 @@ class CarreraLocal {
     required this.sincronizada,
     required this.creadoUtc,
     this.modo,
+    this.titulo,
+    this.descripcion,
+    this.intensidad,
   });
 
   factory CarreraLocal.desdeFila(Map<String, Object?> f) => CarreraLocal(
@@ -43,6 +46,9 @@ class CarreraLocal {
     sincronizada: f['sincronizada'] == 1,
     creadoUtc: DateTime.parse(f['creado_utc']! as String),
     modo: ModoActividad.desdeTexto(f['modo'] as String?),
+    titulo: f['titulo'] as String?,
+    descripcion: f['descripcion'] as String?,
+    intensidad: f['intensidad'] as int?,
   );
 
   final String id;
@@ -60,6 +66,13 @@ class CarreraLocal {
 
   /// null = libre.
   final ModoActividad? modo;
+
+  /// null = el propuesto por [tituloActividad].
+  final String? titulo;
+  final String? descripcion;
+
+  /// 1 a 5; null = sin marcar.
+  final int? intensidad;
 }
 
 /// Base local de carreras. Cada punto se escribe al llegar: si el sistema
@@ -67,7 +80,7 @@ class CarreraLocal {
 class CarrerasDb {
   CarrerasDb._(this._db);
 
-  static const _version = 3;
+  static const _version = 4;
 
   final Database _db;
 
@@ -90,7 +103,10 @@ class CarrerasDb {
             tiempo_movimiento_s INTEGER NOT NULL DEFAULT 0,
             sincronizada INTEGER NOT NULL DEFAULT 0,
             creado_utc TEXT NOT NULL,
-            modo TEXT
+            modo TEXT,
+            titulo TEXT,
+            descripcion TEXT,
+            intensidad INTEGER
           )''');
         await db.execute('''
           CREATE TABLE puntos (
@@ -136,6 +152,13 @@ class CarrerasDb {
             "ALTER TABLE pausas ADD COLUMN motivo TEXT NOT NULL DEFAULT 'manual'",
           );
           await db.execute('ALTER TABLE carreras ADD COLUMN modo TEXT');
+        }
+        if (viejo < 4) {
+          await db.execute('ALTER TABLE carreras ADD COLUMN titulo TEXT');
+          await db.execute('ALTER TABLE carreras ADD COLUMN descripcion TEXT');
+          await db.execute(
+            'ALTER TABLE carreras ADD COLUMN intensidad INTEGER',
+          );
         }
       },
     );
@@ -246,6 +269,29 @@ class CarrerasDb {
     where: 'id = ?',
     whereArgs: [carreraId],
   );
+
+  /// Lo que el usuario edita de una actividad. Escribe todo junto; null en
+  /// [titulo], [descripcion] o [intensidad] los deja sin valor. Cambiar el
+  /// [tipo] solo cambia la etiqueta: no recalcula distancia ni tiempo.
+  Future<void> actualizarDetalles(
+    String carreraId, {
+    String? titulo,
+    String? descripcion,
+    int? intensidad,
+    required TipoActividad tipo,
+  }) => _db.transaction((tx) async {
+    await tx.update(
+      'carreras',
+      {
+        'titulo': titulo,
+        'descripcion': descripcion,
+        'intensidad': intensidad,
+        'tipo': tipo.valor,
+      },
+      where: 'id = ?',
+      whereArgs: [carreraId],
+    );
+  });
 
   Future<CarreraLocal?> carrera(String id) async {
     final filas = await _db.query('carreras', where: 'id = ?', whereArgs: [id]);

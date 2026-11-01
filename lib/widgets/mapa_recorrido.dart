@@ -33,6 +33,7 @@ class MapaRecorrido extends StatefulWidget {
     this.atribucionArriba = false,
     this.acercar = false,
     this.retardoAcercar = Duration.zero,
+    this.interactivo = true,
   });
 
   /// Trozos de la línea (uno por tramo entre pausas).
@@ -51,6 +52,9 @@ class MapaRecorrido extends StatefulWidget {
   /// Espera antes de acercar, para que el zoom no compita con las entradas de
   /// los paneles.
   final Duration retardoAcercar;
+
+  /// false: sin gestos (mapa pequeño de solo lectura).
+  final bool interactivo;
 
   @override
   State<MapaRecorrido> createState() => _MapaRecorridoState();
@@ -265,7 +269,9 @@ class _MapaRecorridoState extends State<MapaRecorrido>
             // Grabando (acercar) el mapa queda fijo al punto: solo se permite
             // el zoom con los dedos, así un arrastre sin querer no lo suelta.
             interactionOptions: InteractionOptions(
-              flags: widget.acercar
+              flags: !widget.interactivo
+                  ? InteractiveFlag.none
+                  : widget.acercar
                   ? InteractiveFlag.pinchZoom | InteractiveFlag.doubleTapZoom
                   : InteractiveFlag.all & ~InteractiveFlag.rotate,
             ),

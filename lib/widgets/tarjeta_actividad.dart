@@ -5,9 +5,11 @@ import 'package:hugeicons/hugeicons.dart';
 import '../core/carreras_db.dart';
 import '../core/formato.dart';
 import '../core/historial.dart';
+import '../models/intensidad.dart';
 import '../models/tipo_actividad.dart';
 import '../providers/grabacion_provider.dart';
 import '../providers/historial_provider.dart';
+import '../screens/resumen_screen.dart';
 import '../theme/app_colors.dart';
 import 'dialogo_hey.dart';
 import 'tarjeta.dart';
@@ -41,6 +43,7 @@ class TarjetaActividad extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final c = AppColors.of(context);
+    final intensidad = Intensidad.desdeNivel(carrera.intensidad);
     final trazo = ref.watch(trazoProvider(carrera.id)).value ?? const [];
     return Tarjeta(
       child: Column(
@@ -60,7 +63,8 @@ class TarjetaActividad extends ConsumerWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      tituloActividad(carrera.tipo, carrera.inicioUtc),
+                      carrera.titulo ??
+                          tituloActividad(carrera.tipo, carrera.inicioUtc),
                       style: TextStyle(
                         color: c.textoPrincipal,
                         fontWeight: FontWeight.w700,
@@ -73,14 +77,31 @@ class TarjetaActividad extends ConsumerWidget {
                       ),
                       style: TextStyle(color: c.textoTenue, fontSize: 13),
                     ),
-                    if (carrera.modo != null)
-                      Text(
-                        carrera.modo!.etiqueta!,
-                        style: TextStyle(
-                          color: c.primario,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
+                    if (carrera.modo != null || intensidad != null)
+                      Text.rich(
+                        TextSpan(
+                          children: [
+                            if (carrera.modo != null)
+                              TextSpan(
+                                text: carrera.modo!.etiqueta,
+                                style: TextStyle(
+                                  color: c.primario,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            if (carrera.modo != null && intensidad != null)
+                              TextSpan(
+                                text: ' · ',
+                                style: TextStyle(color: c.textoTenue),
+                              ),
+                            if (intensidad != null)
+                              TextSpan(
+                                text: intensidad.nombre,
+                                style: TextStyle(color: c.textoTenue),
+                              ),
+                          ],
                         ),
+                        style: const TextStyle(fontSize: 13),
                       ),
                   ],
                 ),
@@ -96,6 +117,17 @@ class TarjetaActividad extends ConsumerWidget {
                     size: 22,
                   ),
                   itemBuilder: (_) => [
+                    PopupMenuItem<void>(
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => ResumenScreen(carrera: carrera),
+                        ),
+                      ),
+                      child: Text(
+                        'Editar',
+                        style: TextStyle(color: c.textoPrincipal),
+                      ),
+                    ),
                     PopupMenuItem<void>(
                       onTap: () => _eliminar(context),
                       child: Text(

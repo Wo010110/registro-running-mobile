@@ -26,6 +26,8 @@ class AppColors {
     required this.sobreAccion,
     required this.exito,
     required this.advertencia,
+    required this.intensidadSuave,
+    required this.intensidadDura,
     required this.error,
     required this.errorTexto,
   });
@@ -74,6 +76,11 @@ class AppColors {
   /// Señal o estado intermedio (amarillo).
   final Color advertencia;
 
+  /// Verde amarillento y naranja: los niveles intermedios de intensidad,
+  /// entre [exito], [advertencia] y [error].
+  final Color intensidadSuave;
+  final Color intensidadDura;
+
   /// Relleno y bordes de error.
   final Color error;
 
@@ -97,6 +104,8 @@ class AppColors {
     sobreAccion: Color(0xFFFFFFFF),
     exito: Color(0xFF34C77B),
     advertencia: Color(0xFFF5C542),
+    intensidadSuave: Color(0xFF9BCB3C),
+    intensidadDura: Color(0xFFF08A3C),
     error: Color(0xFFE5484D),
     errorTexto: Color(0xFFFF8A8E),
   );
@@ -118,6 +127,8 @@ class AppColors {
     sobreAccion: Color(0xFFFFFFFF),
     exito: Color(0xFF1F9D5C),
     advertencia: Color(0xFFE0A100),
+    intensidadSuave: Color(0xFF6FA81E),
+    intensidadDura: Color(0xFFE06A12),
     error: Color(0xFFD92D33),
     errorTexto: Color(0xFFB4232A),
   );

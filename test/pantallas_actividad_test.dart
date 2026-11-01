@@ -120,12 +120,21 @@ void main() {
     expect(find.text('4:59 /km'), findsOneWidget);
     expect(find.textContaining('Caminar · '), findsOneWidget);
     // La lista de parciales está dentro del contenedor, que se desplaza.
-    await tester.scrollUntilVisible(find.text('Km 2'), 100);
+    await tester.scrollUntilVisible(
+      find.text('Km 2'),
+      100,
+      scrollable: find
+          .descendant(
+            of: find.byType(SingleChildScrollView),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
     expect(find.text('Km 1'), findsOneWidget);
     expect(find.text('5:00 /km'), findsOneWidget);
     expect(find.text('Km 2'), findsOneWidget);
     expect(find.text('GUARDAR'), findsOneWidget);
-    expect(find.text('En movimiento'), findsNothing);
+    expect(find.textContaining('En movimiento'), findsNothing);
 
     await tester.tap(find.text('DESCARTAR'));
     await tester.pumpAndSettle();
@@ -161,8 +170,7 @@ void main() {
     await tester.pumpWidget(_app(notifier, const ResumenScreen()));
     await tester.pump(const Duration(seconds: 2));
     expect(find.text('00:30:00'), findsOneWidget);
-    expect(find.text('En movimiento'), findsOneWidget);
-    expect(find.text('00:25:00'), findsOneWidget);
+    expect(find.text('En movimiento · 00:25:00'), findsOneWidget);
   });
 
   group('aviso de actividad sin terminar', () {
@@ -319,9 +327,8 @@ void main() {
     await tester.pump(const Duration(seconds: 2));
     await tester.pump(const Duration(seconds: 2));
     expect(tester.takeException(), isNull);
-    await tester.scrollUntilVisible(find.text('Ritmo medio'), 100);
     expect(find.text('28:52 /km'), findsOneWidget);
-    expect(find.text('01:02:33'), findsOneWidget);
+    expect(find.textContaining('01:02:33'), findsOneWidget);
   });
 
   group('vista de grabación con modos', () {

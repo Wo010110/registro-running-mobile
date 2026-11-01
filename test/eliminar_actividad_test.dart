@@ -1,8 +1,13 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:heyrun_mobile/core/carrera_calculos.dart';
 import 'package:heyrun_mobile/core/carreras_db.dart';
+import 'package:heyrun_mobile/core/historial.dart';
+import 'package:heyrun_mobile/models/modo_actividad.dart';
 import 'package:heyrun_mobile/models/tipo_actividad.dart';
 import 'package:heyrun_mobile/providers/grabacion_provider.dart';
 import 'package:heyrun_mobile/providers/historial_provider.dart';
@@ -23,10 +28,17 @@ void main() {
   late String idA;
   late String idB;
 
-  Future<String> terminada(int dia) async {
+  Future<String> terminada(
+    int dia, {
+    ModoActividad? modo,
+    String? titulo,
+    int? intensidad,
+    TipoActividad tipo = TipoActividad.correr,
+  }) async {
     final c = await db.crearCarrera(
       TipoActividad.correr,
       inicio: DateTime.utc(2026, 1, dia, 8),
+      modo: modo,
     );
     for (var s = 0; s < 3; s++) {
       await db.insertarPunto(
@@ -46,6 +58,14 @@ void main() {
       tiempoMovimientoS: 2,
       fin: DateTime.utc(2026, 1, dia, 8, 1),
     );
+    if (titulo != null || intensidad != null || tipo != TipoActividad.correr) {
+      await db.actualizarDetalles(
+        c.id,
+        titulo: titulo,
+        intensidad: intensidad,
+        tipo: tipo,
+      );
+    }
     return c.id;
   }
 
@@ -53,9 +73,19 @@ void main() {
     await tester.runAsync(() async {
       db = await CarrerasDb.abrir(ruta: inMemoryDatabasePath);
       idA = await terminada(1);
-      idB = await terminada(2);
+      idB = await terminada(
+        2,
+        modo: const ModoIntervalos(),
+        titulo: 'Tirada larga',
+        intensidad: 4,
+      );
     });
     addTearDown(() => tester.runAsync(db.cerrar));
+    // El mapa de la edición pide la carpeta de caché a la plataforma.
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      const MethodChannel('plugins.flutter.io/path_provider'),
+      (_) async => Directory.systemTemp.path,
+    );
     tester.view.physicalSize = const Size(400, 1600);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -133,6 +163,71 @@ void main() {
       expect(await db.carrera(idA), isNotNull);
       expect((await db.puntos(idA)).length, 3);
       expect((await db.pausas(idA)).length, 1);
+    });
+  });
+
+  testWidgets('la tarjeta muestra el título guardado y la intensidad', (
+    tester,
+  ) async {
+    await abrir(tester);
+    expect(find.text('Tirada larga'), findsOneWidget);
+    expect(find.text('Intervalos 8 × 400 m · Dura'), findsOneWidget);
+    await esperarDb(tester);
+    // La otra no tiene título ni intensidad: usa el propuesto.
+    expect(
+      find.text(
+        tituloActividad(TipoActividad.correr, DateTime.utc(2026, 1, 1, 8)),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('Editar abre la pantalla de edición y guarda los cambios', (
+    tester,
+  ) async {
+    await abrir(tester);
+    await tester.tap(find.byTooltip('Más opciones').first);
+    await tester.pumpAndSettle();
+    expect(find.text('Editar'), findsOneWidget);
+    await tester.tap(find.text('Editar'));
+    await tester.pumpAndSettle();
+    expect(find.text('EDITAR ACTIVIDAD'), findsOneWidget);
+    expect(find.text('Tirada larga'), findsOneWidget);
+
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Título').first,
+      'Cuestas del cerro',
+    );
+    await tester.tap(find.text('CAMINAR'));
+    await tester.pump();
+    await tester.tap(find.text('GUARDAR'));
+    await esperarDb(tester);
+    expect(find.text('EDITAR ACTIVIDAD'), findsNothing);
+    expect(find.text('Cuestas del cerro'), findsOneWidget);
+    await tester.runAsync(() async {
+      final b = (await db.carrera(idB))!;
+      expect(b.titulo, 'Cuestas del cerro');
+      expect(b.tipo, TipoActividad.caminar);
+      expect(b.distanciaM, 40); // el tipo no recalcula nada
+      expect(b.intensidad, 4);
+    });
+  });
+
+  testWidgets('cancelar la edición no cambia nada', (tester) async {
+    await abrir(tester);
+    await tester.tap(find.byTooltip('Más opciones').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Editar'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Título').first,
+      'No debe guardarse',
+    );
+    await tester.tap(find.text('CANCELAR'));
+    await esperarDb(tester);
+    expect(find.text('Tirada larga'), findsOneWidget);
+    await tester.runAsync(() async {
+      expect((await db.carrera(idB))!.titulo, 'Tirada larga');
     });
   });
 }

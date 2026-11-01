@@ -118,6 +118,20 @@ class _DbFalla implements CarrerasDb {
   Future<void> reanudar(String carreraId, {DateTime? ahora}) =>
       real.reanudar(carreraId, ahora: ahora);
   @override
+  Future<void> actualizarDetalles(
+    String carreraId, {
+    String? titulo,
+    String? descripcion,
+    int? intensidad,
+    required TipoActividad tipo,
+  }) => real.actualizarDetalles(
+    carreraId,
+    titulo: titulo,
+    descripcion: descripcion,
+    intensidad: intensidad,
+    tipo: tipo,
+  );
+  @override
   Future<CarreraLocal?> carrera(String id) => real.carrera(id);
   @override
   Future<List<PuntoGps>> puntos(String carreraId) => real.puntos(carreraId);

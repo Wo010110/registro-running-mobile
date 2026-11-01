@@ -335,7 +335,154 @@ void main() {
           '$t.${f['name']}',
     ];
     expect(columnas, containsAll(['carreras.modo', 'pausas.motivo']));
-    expect(await cruda.getVersion(), 3);
+    expect(await cruda.getVersion(), 4);
+    await cruda.close();
+  });
+
+  test(
+    'actualizarDetalles escribe todo y cambiar el tipo no toca los totales',
+    () async {
+      final c = await db.crearCarrera(TipoActividad.correr);
+      await db.terminar(c.id, distanciaM: 5012.5, tiempoMovimientoS: 1500);
+      await db.actualizarDetalles(
+        c.id,
+        titulo: 'Rodaje',
+        descripcion: 'Piernas pesadas',
+        intensidad: 4,
+        tipo: TipoActividad.caminar,
+      );
+      final a = (await db.carrera(c.id))!;
+      expect(a.titulo, 'Rodaje');
+      expect(a.descripcion, 'Piernas pesadas');
+      expect(a.intensidad, 4);
+      expect(a.tipo, TipoActividad.caminar);
+      expect(a.distanciaM, 5012.5);
+      expect(a.tiempoMovimientoS, 1500);
+      expect(a.estado, EstadoCarrera.terminada);
+
+      // Null deja el campo sin valor (título propuesto, sin marcar).
+      await db.actualizarDetalles(c.id, tipo: TipoActividad.correr);
+      final b = (await db.carrera(c.id))!;
+      expect(b.titulo, isNull);
+      expect(b.descripcion, isNull);
+      expect(b.intensidad, isNull);
+      expect(b.tipo, TipoActividad.correr);
+      expect(b.distanciaM, 5012.5);
+    },
+  );
+
+  test('migra de la v3 a la v4 conservando los datos', () async {
+    final dir = await Directory.systemTemp.createTemp('heyrun_v3');
+    addTearDown(() => dir.delete(recursive: true));
+    final ruta = p.join(dir.path, 'v3.db');
+
+    // Esquema y datos tal como los dejó la v3 instalada en el teléfono.
+    final v3 = await openDatabase(
+      ruta,
+      version: 3,
+      onCreate: (db, _) async {
+        await db.execute('''
+          CREATE TABLE carreras (
+            id TEXT PRIMARY KEY,
+            tipo TEXT NOT NULL DEFAULT 'correr',
+            origen TEXT NOT NULL DEFAULT 'app',
+            estado TEXT NOT NULL,
+            inicio_utc TEXT NOT NULL,
+            fin_utc TEXT,
+            distancia_m REAL NOT NULL DEFAULT 0,
+            tiempo_movimiento_s INTEGER NOT NULL DEFAULT 0,
+            sincronizada INTEGER NOT NULL DEFAULT 0,
+            creado_utc TEXT NOT NULL,
+            modo TEXT
+          )''');
+        await db.execute('''
+          CREATE TABLE puntos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            carrera_id TEXT NOT NULL
+              REFERENCES carreras(id) ON DELETE CASCADE,
+            lat REAL NOT NULL,
+            lng REAL NOT NULL,
+            altitud REAL,
+            precision_m REAL NOT NULL,
+            velocidad REAL,
+            instante_utc TEXT NOT NULL,
+            aceptado INTEGER NOT NULL,
+            indice INTEGER NOT NULL
+          )''');
+        await db.execute('''
+          CREATE TABLE pausas (
+            carrera_id TEXT NOT NULL
+              REFERENCES carreras(id) ON DELETE CASCADE,
+            inicio_utc TEXT NOT NULL,
+            fin_utc TEXT,
+            motivo TEXT NOT NULL DEFAULT 'manual'
+          )''');
+      },
+    );
+    await v3.insert('carreras', {
+      'id': 'a',
+      'tipo': 'caminar',
+      'origen': 'app',
+      'estado': 'terminada',
+      'inicio_utc': '2026-01-01T08:00:00.000Z',
+      'distancia_m': 5000.0,
+      'tiempo_movimiento_s': 1500,
+      'creado_utc': '2026-01-01T08:00:00.000Z',
+      'modo':
+          '{"modo":"meta","medida":"distancia","valor":5000,"alLlegar":"avisar"}',
+    });
+    await v3.insert('puntos', {
+      'carrera_id': 'a',
+      'lat': 4.0,
+      'lng': -74.0,
+      'precision_m': 5.0,
+      'instante_utc': '2026-01-01T08:00:00.000Z',
+      'aceptado': 1,
+      'indice': 0,
+    });
+    await v3.insert('pausas', {
+      'carrera_id': 'a',
+      'inicio_utc': '2026-01-01T08:10:00.000Z',
+      'fin_utc': '2026-01-01T08:11:00.000Z',
+      'motivo': 'descanso',
+    });
+    await v3.close();
+
+    final migrada = await CarrerasDb.abrir(ruta: ruta);
+    final a = (await migrada.carrera('a'))!;
+    expect(a.tipo, TipoActividad.caminar);
+    expect(a.distanciaM, 5000);
+    expect(a.modo, isA<ModoMeta>());
+    expect(a.titulo, isNull);
+    expect(a.descripcion, isNull);
+    expect(a.intensidad, isNull);
+    expect((await migrada.puntos('a')).length, 1);
+    expect((await migrada.pausas('a')).single.descanso, isTrue);
+
+    await migrada.actualizarDetalles(
+      'a',
+      titulo: 'Mi caminata',
+      intensidad: 2,
+      tipo: TipoActividad.caminar,
+    );
+    expect((await migrada.carrera('a'))!.titulo, 'Mi caminata');
+    await migrada.cerrar();
+
+    final cruda = await openDatabase(ruta);
+    final columnas = [
+      for (final f in await cruda.rawQuery('PRAGMA table_info(carreras)'))
+        '${f['name']}',
+    ];
+    expect(columnas, containsAll(['titulo', 'descripcion', 'intensidad']));
+    expect(await cruda.getVersion(), 4);
+    // Sin tabla de fotos.
+    final tablas = [
+      for (final t in await cruda.rawQuery(
+        "SELECT name FROM sqlite_master WHERE type = 'table'",
+      ))
+        '${t['name']}',
+    ];
+    expect(tablas, isNot(contains('fotos')));
     await cruda.close();
   });
 }
