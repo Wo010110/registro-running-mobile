@@ -215,7 +215,7 @@ class ChipTemporizador extends StatelessWidget {
               ),
               const SizedBox(width: 6),
               Text(
-                activo ? '$segundos S' : 'SIN',
+                activo ? '$segundos s' : 'Sin',
                 style: TextStyle(
                   color: activo ? c.textoPrincipal : c.textoSecundario,
                   fontWeight: FontWeight.w700,
@@ -272,21 +272,29 @@ class BotonFlotante extends StatelessWidget {
         onTap: onTap,
         child: SizedBox(
           height: 56,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              HugeIcon(icon: icono, color: color, size: 22),
-              const SizedBox(width: 8),
-              Text(
-                texto,
-                style: TextStyle(
-                  color: color,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 1.2,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                HugeIcon(icon: icono, color: color, size: 22),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      texto,
+                      style: TextStyle(
+                        color: color,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

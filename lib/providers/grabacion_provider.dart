@@ -3,9 +3,12 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/avisos.dart';
 import '../core/carrera_calculos.dart';
 import '../core/carreras_db.dart';
 import '../core/fuente_posiciones.dart';
+import '../core/motor_modos.dart';
+import '../models/modo_actividad.dart';
 import '../models/tipo_actividad.dart';
 
 /// Se sobrescribe en `main` con la base ya abierta.
@@ -16,6 +19,8 @@ final carrerasDbProvider = Provider<CarrerasDb>(
 final fuentePosicionesProvider = Provider<FuentePosiciones>(
   (ref) => const FuenteGeolocator(),
 );
+
+final avisadorProvider = Provider<Avisador>((ref) => AvisadorSonoro());
 
 /// Reloj de la grabación; las pruebas lo sustituyen.
 final relojProvider = Provider<DateTime Function()>((ref) => DateTime.now);
@@ -49,6 +54,8 @@ class GrabacionState {
     this.inicioUtc,
     this.posicion,
     this.ruta = const [],
+    this.modo = const ModoLibre(),
+    this.estadoModo,
     this.distanciaM = 0,
     this.tiempoMovimientoS = 0,
     this.tiempoTotalS = 0,
@@ -69,8 +76,14 @@ class GrabacionState {
   /// Última posición recibida, aceptada o no.
   final PuntoGps? posicion;
 
-  /// Puntos de la línea dibujada ([FiltroVisual]); la distancia no sale de aquí.
-  final List<PuntoGps> ruta;
+  /// Trozos de la línea dibujada ([FiltroVisual]), cortada en cada pausa; la
+  /// distancia no sale de aquí. Puede terminar en un trozo vacío.
+  final List<List<PuntoGps>> ruta;
+
+  final ModoActividad modo;
+
+  /// null en modo libre.
+  final EstadoModo? estadoModo;
   final double distanciaM;
   final int tiempoMovimientoS;
 
@@ -101,8 +114,13 @@ class GrabacionNotifier extends Notifier<GrabacionState> {
   TipoActividad _tipo = TipoActividad.correr;
   CarreraLocal? _carrera;
   List<PuntoGps> _puntos = [];
-  List<PuntoGps> _ruta = [];
+  List<List<PuntoGps>> _ruta = [];
   List<PausaCarrera> _pausas = [];
+  ModoActividad _modo = const ModoLibre();
+  EstadoModo? _estadoModo;
+  bool _finDisparado = false;
+  bool _metaDisparada = false;
+  double? _ritmoCongelado;
   FiltroGps _filtro = FiltroGps();
   FiltroVisual _filtroVisual = FiltroVisual();
   PuntoGps? _posicion;
@@ -144,6 +162,8 @@ class GrabacionNotifier extends Notifier<GrabacionState> {
     }
     _tipo = tipo;
     _fase = FaseGrabacion.preparando;
+    // Con la pantalla de preparar abierta, el audio ya queda listo.
+    unawaited(ref.read(avisadorProvider).precalentar());
     _posicion = null;
     _error = null;
     await _sub?.cancel();
@@ -161,6 +181,12 @@ class GrabacionNotifier extends Notifier<GrabacionState> {
     _publicar();
   }
 
+  void cambiarModo(ModoActividad modo) {
+    if (_fase != FaseGrabacion.preparando) return;
+    _modo = modo;
+    _publicar();
+  }
+
   Future<void> cancelarPreparacion() async {
     if (_fase != FaseGrabacion.preparando) return;
     await _reiniciar();
@@ -171,7 +197,11 @@ class GrabacionNotifier extends Notifier<GrabacionState> {
     _fase = FaseGrabacion.grabando;
     await _sub?.cancel();
     try {
-      final carrera = await _db.crearCarrera(_tipo, inicio: _ahora());
+      final carrera = await _db.crearCarrera(
+        _tipo,
+        inicio: _ahora(),
+        modo: _modo,
+      );
       _arrancar(carrera, [], [], FaseGrabacion.grabando);
     } catch (_) {
       _fase = FaseGrabacion.inactivo;
@@ -186,13 +216,16 @@ class GrabacionNotifier extends Notifier<GrabacionState> {
     final ahora = _ahora();
     _pausas.add(PausaCarrera(inicio: ahora));
     _fase = FaseGrabacion.pausada;
+    _cortarRuta();
     _recalcular();
     await _db.pausar(c.id, ahora: ahora);
   }
 
+  /// Durante el descanso de los intervalos solo reanuda [saltarDescanso].
   Future<void> reanudar() async {
     final c = _carrera;
     if (c == null || _fase != FaseGrabacion.pausada) return;
+    if (_estadoModo?.fase == FaseModo.descansando) return;
     final ahora = _ahora();
     _pausas[_pausas.length - 1] = PausaCarrera(
       inicio: _pausas.last.inicio,
@@ -201,6 +234,13 @@ class GrabacionNotifier extends Notifier<GrabacionState> {
     _fase = FaseGrabacion.grabando;
     _recalcular();
     await _db.reanudar(c.id, ahora: ahora);
+  }
+
+  /// Termina el descanso de los intervalos antes de tiempo.
+  void saltarDescanso() {
+    if (_estadoModo?.fase != FaseModo.descansando || _cerrando) return;
+    _terminarDescanso();
+    _recalcular();
   }
 
   /// Detiene el GPS y calcula el resumen final desde lo guardado en disco.
@@ -300,12 +340,13 @@ class GrabacionNotifier extends Notifier<GrabacionState> {
     _tipo = carrera.tipo;
     _fase = fase;
     _puntos = puntos;
-    _filtroVisual = FiltroVisual(tipo: carrera.tipo);
-    _ruta = [
-      for (final p in puntos)
-        if (_filtroVisual.admite(p)) p,
-    ];
+    _modo = carrera.modo ?? const ModoLibre();
     _pausas = pausas;
+    _filtroVisual = FiltroVisual(tipo: carrera.tipo);
+    _ruta = rutaVisual(puntos, carrera.tipo, pausas);
+    // La línea sigue en un trozo nuevo: lo que pasó con la app cerrada no se
+    // une con una recta.
+    _cortarRuta();
     _filtro = FiltroGps(
       ultimoAceptado: aceptados.isEmpty ? null : aceptados.last,
       tipo: carrera.tipo,
@@ -315,6 +356,10 @@ class GrabacionNotifier extends Notifier<GrabacionState> {
     _sinSenal = false;
     _falloCierre = false;
     _intentos = 0;
+    // Lo que ya se cumplió antes de cerrar la app no vuelve a avisar.
+    final modo = _evaluar();
+    _finDisparado = modo?.fase == FaseModo.terminado;
+    _metaDisparada = modo?.evento == EventoModo.metaAlcanzada;
     _escuchar();
     _servicio = _fuente.servicioHabilitado().listen(_alCambiarServicio);
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -398,7 +443,11 @@ class GrabacionNotifier extends Notifier<GrabacionState> {
     if (c == null) return;
     final punto = _filtro.clasificar(crudo);
     _puntos.add(punto);
-    if (_filtroVisual.admite(punto)) _ruta.add(punto);
+    // Durante una pausa (manual o descanso) la línea no se dibuja.
+    if (_fase == FaseGrabacion.grabando && _filtroVisual.admite(punto)) {
+      if (_ruta.isEmpty) _ruta.add([]);
+      _ruta.last.add(punto);
+    }
     _posicion = crudo;
     _error = null;
     _sinSenal = false;
@@ -448,7 +497,7 @@ class GrabacionNotifier extends Notifier<GrabacionState> {
       _carrera = c;
       _tipo = c.tipo;
       _puntos = puntos;
-      _ruta = rutaVisual(puntos, c.tipo);
+      _ruta = rutaVisual(puntos, c.tipo, pausas);
       _pausas = pausas;
       _posicion = puntos.isEmpty ? null : puntos.last;
       _calculo = r;
@@ -468,6 +517,9 @@ class GrabacionNotifier extends Notifier<GrabacionState> {
     _puntos = [];
     _ruta = [];
     _pausas = [];
+    _modo = const ModoLibre();
+    _estadoModo = null;
+    _ritmoCongelado = null;
     _posicion = null;
     _calculo = null;
     _totalS = 0;
@@ -481,9 +533,109 @@ class GrabacionNotifier extends Notifier<GrabacionState> {
   void _recalcular() {
     if (_fase == FaseGrabacion.grabando || _fase == FaseGrabacion.pausada) {
       _calculo = calcularCarrera(_puntos, _pausas, ahora: _ahora());
+      _evaluarModo();
     }
     _publicar();
   }
+
+  /// Corta la línea dibujada: el siguiente punto abre un trozo nuevo.
+  void _cortarRuta() {
+    if (_ruta.isNotEmpty && _ruta.last.isNotEmpty) _ruta.add([]);
+    _filtroVisual = FiltroVisual(tipo: _tipo);
+  }
+
+  EstadoModo? _evaluar() {
+    final c = _carrera;
+    if (c == null || _modo is ModoLibre) return null;
+    return evaluarModo(
+      modo: _modo,
+      inicio: c.inicioUtc,
+      puntos: _puntos,
+      pausas: _pausas,
+      ahora: _ahora(),
+      distanciaTotalM: _calculo?.distanciaM,
+    );
+  }
+
+  /// Ejecuta lo que toque según el modo. Cada acción cambia el estado en el
+  /// acto, así que no se repite en la siguiente evaluación.
+  // shortcut: el cambio de tramo se detecta al llegar un punto o en el tick de
+  // 1 s, así que un tramo puede pasarse hasta ~1 s; mejorar si hace falta
+  // exactitud al segundo.
+  void _evaluarModo() {
+    if (_cerrando) return;
+    final e = _estadoModo = _evaluar();
+    switch (e?.evento) {
+      case EventoModo.empezarDescanso:
+        // Con pausa manual el tramo está congelado y no debería completarse.
+        if (_fase != FaseGrabacion.grabando) return;
+        _empezarDescanso();
+        _estadoModo = _evaluar();
+      case EventoModo.empezarTramo:
+        _terminarDescanso();
+        _estadoModo = _evaluar();
+      case EventoModo.finIntervalos:
+        if (_finDisparado) return;
+        _finDisparado = true;
+        _aviso(Aviso.meta);
+        switch ((_modo as ModoIntervalos).alTerminar) {
+          case AlTerminarIntervalos.finalizar:
+            unawaited(terminar());
+          case AlTerminarIntervalos.pausar:
+            unawaited(pausar());
+          case AlTerminarIntervalos.libre:
+        }
+      case EventoModo.metaAlcanzada:
+        if (_metaDisparada) return;
+        _metaDisparada = true;
+        _aviso(Aviso.meta);
+        switch ((_modo as ModoMeta).alLlegar) {
+          case AlLlegarMeta.pausar:
+            unawaited(pausar());
+          case AlLlegarMeta.finalizar:
+            unawaited(terminar());
+          case AlLlegarMeta.avisar:
+        }
+      case null:
+    }
+  }
+
+  /// El descanso es una pausa automática: los puntos siguen llegando (para
+  /// medir los metros caminados) pero no suman ni se dibujan.
+  void _empezarDescanso() {
+    final c = _carrera!;
+    final ahora = _ahora();
+    _ritmoCongelado = _calculo?.ritmoActualSKm;
+    _pausas.add(PausaCarrera(inicio: ahora, descanso: true));
+    _fase = FaseGrabacion.pausada;
+    _cortarRuta();
+    _escribir(() => _db.pausar(c.id, ahora: ahora, descanso: true));
+    _aviso(Aviso.descanso);
+  }
+
+  void _terminarDescanso() {
+    final c = _carrera!;
+    final ahora = _ahora();
+    _pausas[_pausas.length - 1] = PausaCarrera(
+      inicio: _pausas.last.inicio,
+      fin: ahora,
+      descanso: true,
+    );
+    _fase = FaseGrabacion.grabando;
+    _escribir(() => _db.reanudar(c.id, ahora: ahora));
+    _aviso(Aviso.correr);
+  }
+
+  void _escribir(Future<void> Function() operacion) {
+    _escrituras = _escrituras.then((_) => operacion()).catchError((Object _) {
+      if (!ref.mounted) return;
+      _error = 'No se pudo guardar el descanso en el teléfono.';
+      _publicar();
+    });
+  }
+
+  void _aviso(Aviso aviso) =>
+      unawaited(ref.read(avisadorProvider).avisar(aviso));
 
   /// Segundos desde el último punto que aún cuentan como tiempo en
   /// movimiento: el reloj avanza entre puntos sin depender de los ticks.
@@ -518,10 +670,14 @@ class GrabacionNotifier extends Notifier<GrabacionState> {
       inicioUtc: _carrera?.inicioUtc,
       posicion: _posicion,
       ruta: _ruta,
+      modo: _modo,
+      estadoModo: _estadoModo,
       distanciaM: r?.distanciaM ?? 0,
       tiempoMovimientoS: (r?.tiempoMovimientoS ?? 0) + _segundosEnCurso(),
       tiempoTotalS: _tiempoTotalS(),
-      ritmoActualSKm: r?.ritmoActualSKm,
+      ritmoActualSKm: _estadoModo?.fase == FaseModo.descansando
+          ? _ritmoCongelado
+          : r?.ritmoActualSKm,
       ritmoMedioSKm: r?.ritmoMedioSKm,
       resumen: _fase == FaseGrabacion.terminada ? r : null,
       error: _error,

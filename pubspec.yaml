@@ -51,6 +51,8 @@ dependencies:
   flutter_map: ^8.3.2
   latlong2: ^0.10.1
   device_info_plus: ^13.3.0
+  audioplayers: ^6.8.1
+  vibration: ^3.2.1
 
 dev_dependencies:
   flutter_test:
@@ -79,6 +81,7 @@ flutter:
 
   assets:
     - assets/icon/
+    - assets/sonidos/
 
   # Barlow (SIL OFL, licencia en assets/fonts/OFL-Barlow.txt), incluida en la
   # app para no depender de internet.

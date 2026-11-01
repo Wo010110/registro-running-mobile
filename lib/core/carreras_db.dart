@@ -2,6 +2,7 @@ import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
 
+import '../models/modo_actividad.dart';
 import '../models/tipo_actividad.dart';
 import 'carrera_calculos.dart';
 
@@ -9,6 +10,9 @@ enum EstadoCarrera { grabando, pausada, terminada }
 
 const origenApp = 'app';
 const origenPrueba = 'prueba';
+
+const motivoManual = 'manual';
+const motivoDescanso = 'descanso';
 
 class CarreraLocal {
   const CarreraLocal({
@@ -22,6 +26,7 @@ class CarreraLocal {
     required this.tiempoMovimientoS,
     required this.sincronizada,
     required this.creadoUtc,
+    this.modo,
   });
 
   factory CarreraLocal.desdeFila(Map<String, Object?> f) => CarreraLocal(
@@ -37,6 +42,7 @@ class CarreraLocal {
     tiempoMovimientoS: f['tiempo_movimiento_s']! as int,
     sincronizada: f['sincronizada'] == 1,
     creadoUtc: DateTime.parse(f['creado_utc']! as String),
+    modo: ModoActividad.desdeTexto(f['modo'] as String?),
   );
 
   final String id;
@@ -51,6 +57,9 @@ class CarreraLocal {
   final int tiempoMovimientoS;
   final bool sincronizada;
   final DateTime creadoUtc;
+
+  /// null = libre.
+  final ModoActividad? modo;
 }
 
 /// Base local de carreras. Cada punto se escribe al llegar: si el sistema
@@ -58,7 +67,7 @@ class CarreraLocal {
 class CarrerasDb {
   CarrerasDb._(this._db);
 
-  static const _version = 2;
+  static const _version = 3;
 
   final Database _db;
 
@@ -80,7 +89,8 @@ class CarrerasDb {
             distancia_m REAL NOT NULL DEFAULT 0,
             tiempo_movimiento_s INTEGER NOT NULL DEFAULT 0,
             sincronizada INTEGER NOT NULL DEFAULT 0,
-            creado_utc TEXT NOT NULL
+            creado_utc TEXT NOT NULL,
+            modo TEXT
           )''');
         await db.execute('''
           CREATE TABLE puntos (
@@ -101,7 +111,8 @@ class CarrerasDb {
             carrera_id TEXT NOT NULL
               REFERENCES carreras(id) ON DELETE CASCADE,
             inicio_utc TEXT NOT NULL,
-            fin_utc TEXT
+            fin_utc TEXT,
+            motivo TEXT NOT NULL DEFAULT 'manual'
           )''');
         await db.execute(
           'CREATE INDEX idx_puntos_carrera ON puntos(carrera_id)',
@@ -119,6 +130,13 @@ class CarrerasDb {
           // Todo lo de la v1 lo grabó la pantalla de prueba.
           await db.execute("UPDATE carreras SET origen = 'prueba'");
         }
+        if (viejo < 3) {
+          // motivo: 'manual' o 'descanso' (pausa automática de los intervalos).
+          await db.execute(
+            "ALTER TABLE pausas ADD COLUMN motivo TEXT NOT NULL DEFAULT 'manual'",
+          );
+          await db.execute('ALTER TABLE carreras ADD COLUMN modo TEXT');
+        }
       },
     );
     return CarrerasDb._(db);
@@ -130,6 +148,7 @@ class CarrerasDb {
     TipoActividad tipo, {
     DateTime? inicio,
     String origen = origenApp,
+    ModoActividad? modo,
   }) async {
     final ahora = (inicio ?? DateTime.now()).toUtc().toIso8601String();
     final fila = <String, Object?>{
@@ -139,6 +158,7 @@ class CarrerasDb {
       'estado': EstadoCarrera.grabando.name,
       'inicio_utc': ahora,
       'creado_utc': DateTime.now().toUtc().toIso8601String(),
+      'modo': modo?.aTexto(),
     };
     await _db.insert('carreras', fila);
     return (await carrera(fila['id']! as String))!;
@@ -164,14 +184,19 @@ class CarrerasDb {
     ],
   );
 
-  Future<void> pausar(String carreraId, {DateTime? ahora}) =>
-      _db.transaction((tx) async {
-        await tx.insert('pausas', {
-          'carrera_id': carreraId,
-          'inicio_utc': (ahora ?? DateTime.now()).toUtc().toIso8601String(),
-        });
-        await _estado(tx, carreraId, EstadoCarrera.pausada);
-      });
+  /// [descanso]: pausa automática de los intervalos, no del usuario.
+  Future<void> pausar(
+    String carreraId, {
+    DateTime? ahora,
+    bool descanso = false,
+  }) => _db.transaction((tx) async {
+    await tx.insert('pausas', {
+      'carrera_id': carreraId,
+      'inicio_utc': (ahora ?? DateTime.now()).toUtc().toIso8601String(),
+      'motivo': descanso ? motivoDescanso : motivoManual,
+    });
+    await _estado(tx, carreraId, EstadoCarrera.pausada);
+  });
 
   Future<void> reanudar(String carreraId, {DateTime? ahora}) =>
       _db.transaction((tx) async {
@@ -262,6 +287,7 @@ class CarrerasDb {
           fin: f['fin_utc'] == null
               ? null
               : DateTime.parse(f['fin_utc']! as String),
+          descanso: f['motivo'] == motivoDescanso,
         ),
     ];
   }

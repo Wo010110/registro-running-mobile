@@ -38,7 +38,11 @@ void main() {
       crudos,
       TipoActividad.caminar,
     ).where((p) => p.aceptado).length;
-    final visual = rutaVisual(crudos, TipoActividad.caminar).length;
+    final visual = rutaVisual(
+      crudos,
+      TipoActividad.caminar,
+      const [],
+    ).single.length;
     expect(visual, greaterThan(aceptados));
     expect(visual, 11);
   });
@@ -52,7 +56,7 @@ void main() {
       _punto(500, 4), // salto imposible caminando
       _punto(5, 5),
     ];
-    final visual = rutaVisual(crudos, TipoActividad.caminar);
+    final visual = rutaVisual(crudos, TipoActividad.caminar, const []).single;
     expect(visual.length, 3);
   });
 
@@ -282,5 +286,67 @@ void main() {
       'calcularCarrera(6000 puntos): ${msPorCalculo.toStringAsFixed(2)} ms',
     );
     expect(msPorCalculo, lessThan(20));
+  });
+
+  group('línea dibujada en trozos', () {
+    PausaCarrera pausa(int ini, [int? fin]) => PausaCarrera(
+      inicio: _t0.add(Duration(seconds: ini)),
+      fin: fin == null ? null : _t0.add(Duration(seconds: fin)),
+    );
+    final crudos = [for (var s = 0; s <= 30; s++) _punto(s * 3.0, s)];
+
+    test('sin pausas es un solo trozo', () {
+      final trozos = rutaVisual(crudos, TipoActividad.correr, const []);
+      expect(trozos.length, 1);
+      expect(trozos.single.length, 31);
+    });
+
+    test('se corta en cada pausa y no dibuja lo recibido durante ella', () {
+      final trozos = rutaVisual(crudos, TipoActividad.correr, [pausa(10, 20)]);
+      expect(trozos.length, 2);
+      expect(trozos.first.last.instante, _t0.add(const Duration(seconds: 9)));
+      expect(trozos.last.first.instante, _t0.add(const Duration(seconds: 20)));
+      expect(trozos.fold<int>(0, (n, t) => n + t.length), 10 + 11);
+    });
+
+    test(
+      'dos pausas dan tres trozos y una pausa abierta no deja uno vacío',
+      () {
+        final tres = rutaVisual(crudos, TipoActividad.correr, [
+          pausa(8, 12),
+          pausa(20, 24),
+        ]);
+        expect(tres.length, 3);
+        final abierta = rutaVisual(crudos, TipoActividad.correr, [pausa(15)]);
+        expect(abierta.length, 1);
+        expect(
+          abierta.single.last.instante,
+          _t0.add(const Duration(seconds: 14)),
+        );
+      },
+    );
+
+    test('una pausa sin puntos dentro también corta la línea', () {
+      final salteados = [
+        crudos[0],
+        crudos[1],
+        crudos[2],
+        crudos[20],
+        crudos[21],
+      ];
+      final trozos = rutaVisual(salteados, TipoActividad.correr, [
+        pausa(5, 15),
+      ]);
+      expect(trozos.length, 2);
+    });
+
+    test('la pausa descanso se trata igual que la manual', () {
+      final descanso = PausaCarrera(
+        inicio: _t0.add(const Duration(seconds: 10)),
+        fin: _t0.add(const Duration(seconds: 20)),
+        descanso: true,
+      );
+      expect(rutaVisual(crudos, TipoActividad.correr, [descanso]).length, 2);
+    });
   });
 }

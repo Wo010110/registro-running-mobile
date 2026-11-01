@@ -56,11 +56,14 @@ class PuntoGps {
 }
 
 class PausaCarrera {
-  PausaCarrera({required DateTime inicio, DateTime? fin})
+  PausaCarrera({required DateTime inicio, DateTime? fin, this.descanso = false})
     : inicio = inicio.toUtc(),
       fin = fin?.toUtc();
 
   final DateTime inicio;
+
+  /// Pausa automática del descanso de los intervalos (no la pidió el usuario).
+  final bool descanso;
 
   /// null: sigue en pausa.
   final DateTime? fin;
@@ -169,13 +172,38 @@ class FiltroVisual {
   }
 }
 
-/// Línea dibujada de una lista completa de puntos (al recuperar o terminar).
-List<PuntoGps> rutaVisual(List<PuntoGps> puntos, TipoActividad tipo) {
-  final f = FiltroVisual(tipo: tipo);
-  return [
-    for (final p in puntos)
-      if (f.admite(p)) p,
-  ];
+/// Línea dibujada de una lista completa de puntos (al recuperar o terminar),
+/// en trozos: se corta en cada pausa y los puntos recibidos durante ella no
+/// se dibujan, así no hay recta entre el antes y el después.
+List<List<PuntoGps>> rutaVisual(
+  List<PuntoGps> puntos,
+  TipoActividad tipo,
+  List<PausaCarrera> pausas,
+) {
+  final trozos = <List<PuntoGps>>[];
+  var filtro = FiltroVisual(tipo: tipo);
+  PuntoGps? previo;
+  var cortar = false;
+  for (final p in puntos) {
+    final t = p.instante;
+    if (pausas.any(
+      (q) => !t.isBefore(q.inicio) && (q.fin == null || t.isBefore(q.fin!)),
+    )) {
+      continue;
+    }
+    final a = previo?.instante;
+    if (a != null &&
+        pausas.any((q) => q.inicio.isAfter(a) && q.inicio.isBefore(t))) {
+      filtro = FiltroVisual(tipo: tipo);
+      cortar = true;
+    }
+    previo = p;
+    if (!filtro.admite(p)) continue;
+    if (trozos.isEmpty || cortar) trozos.add([]);
+    cortar = false;
+    trozos.last.add(p);
+  }
+  return trozos;
 }
 
 typedef _Intervalo = (DateTime, DateTime);

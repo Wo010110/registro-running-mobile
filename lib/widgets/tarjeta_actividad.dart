@@ -6,8 +6,10 @@ import '../core/carreras_db.dart';
 import '../core/formato.dart';
 import '../core/historial.dart';
 import '../models/tipo_actividad.dart';
+import '../providers/grabacion_provider.dart';
 import '../providers/historial_provider.dart';
 import '../theme/app_colors.dart';
+import 'dialogo_hey.dart';
 import 'tarjeta.dart';
 import 'trazo_ruta.dart';
 
@@ -17,6 +19,24 @@ class TarjetaActividad extends ConsumerWidget {
 
   final CarreraLocal carrera;
   final double alto;
+
+  /// Pide confirmación y borra la actividad con su recorrido y sus pausas.
+  Future<void> _eliminar(BuildContext context) async {
+    // El contenedor sobrevive a la tarjeta, que desaparece al borrar.
+    final contenedor = ProviderScope.containerOf(context);
+    final confirmado = await confirmarHey(
+      context,
+      titulo: '¿Eliminar esta actividad?',
+      mensaje: 'Se borrará con su recorrido y no se puede deshacer.',
+      confirmar: 'Eliminar',
+      cancelar: 'Cancelar',
+      destructivo: true,
+    );
+    if (!confirmado) return;
+    await contenedor.read(carrerasDbProvider).descartar(carrera.id);
+    contenedor.invalidate(historialProvider);
+    contenedor.invalidate(trazoProvider(carrera.id));
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -53,9 +73,38 @@ class TarjetaActividad extends ConsumerWidget {
                       ),
                       style: TextStyle(color: c.textoTenue, fontSize: 13),
                     ),
+                    if (carrera.modo != null)
+                      Text(
+                        carrera.modo!.etiqueta!,
+                        style: TextStyle(
+                          color: c.primario,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                   ],
                 ),
               ),
+              if (carrera.estado == EstadoCarrera.terminada)
+                PopupMenuButton<void>(
+                  tooltip: 'Más opciones',
+                  color: c.superficie,
+                  padding: EdgeInsets.zero,
+                  icon: HugeIcon(
+                    icon: HugeIcons.strokeRoundedMoreHorizontal,
+                    color: c.textoTenue,
+                    size: 22,
+                  ),
+                  itemBuilder: (_) => [
+                    PopupMenuItem<void>(
+                      onTap: () => _eliminar(context),
+                      child: Text(
+                        'Eliminar actividad',
+                        style: TextStyle(color: c.errorTexto),
+                      ),
+                    ),
+                  ],
+                ),
             ],
           ),
           const SizedBox(height: 14),
@@ -65,7 +114,11 @@ class TarjetaActividad extends ConsumerWidget {
             children: [
               _Dato('Distancia', '${formatearKm(carrera.distanciaM)} km'),
               _Dato('Tiempo', formatearTiempo(carrera.tiempoMovimientoS)),
-              _Dato('Ritmo', '${formatearRitmo(ritmoMedioSKm(carrera))} /km'),
+              _Dato(
+                'Ritmo',
+                formatearRitmo(ritmoMedioSKm(carrera)),
+                unidad: '/km',
+              ),
             ],
           ),
         ],
@@ -103,32 +156,51 @@ class SinActividades extends StatelessWidget {
 }
 
 class _Dato extends StatelessWidget {
-  const _Dato(this.etiqueta, this.valor);
+  const _Dato(this.etiqueta, this.valor, {this.unidad});
 
   final String etiqueta;
   final String valor;
+  final String? unidad;
 
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
     return Expanded(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(etiqueta, style: TextStyle(color: c.textoTenue, fontSize: 12)),
-          const SizedBox(height: 2),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text(
-              valor,
-              style: TextStyle(
-                color: c.textoPrincipal,
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
+      child: Padding(
+        padding: const EdgeInsets.only(right: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(etiqueta, style: TextStyle(color: c.textoTenue, fontSize: 12)),
+            const SizedBox(height: 2),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text.rich(
+                TextSpan(
+                  text: valor,
+                  style: TextStyle(
+                    color: c.textoPrincipal,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  children: [
+                    if (unidad != null)
+                      TextSpan(
+                        text: ' $unidad',
+                        style: TextStyle(
+                          color: c.textoTenue,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                  ],
+                ),
+                maxLines: 1,
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

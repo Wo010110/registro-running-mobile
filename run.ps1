@@ -1,4 +1,6 @@
 # Lanza la app en el KM7 apuntando a la API local de esta laptop (puerto 8000).
+# -Profile: modo profile, para medir el rendimiento real (debug va más lento).
+param([switch]$Profile)
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
 $env:Path += ";C:\Users\osori\AppData\Local\Android\Sdk\platform-tools"
@@ -23,7 +25,11 @@ if (Test-Path "$PSScriptRoot\.env") {
 }
 Write-Host ("Mapa: " + $(if ($mapTiler) { 'MapTiler' } else { 'OSM (sin MAPTILER_KEY en .env)' }))
 
-flutter run -d 151983756N006106 `
-  --dart-define=API_URL=$apiUrl `
-  --dart-define=GOOGLE_SERVER_CLIENT_ID= `
-  --dart-define=MAPTILER_KEY=$mapTiler
+$opciones = @(
+  '-d', '151983756N006106',
+  "--dart-define=API_URL=$apiUrl",
+  '--dart-define=GOOGLE_SERVER_CLIENT_ID=',
+  "--dart-define=MAPTILER_KEY=$mapTiler"
+)
+if ($Profile) { $opciones += '--profile' }
+flutter run @opciones

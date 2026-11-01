@@ -45,3 +45,28 @@ String formatearRitmo(double? segundosPorKm) {
   if (s > 3599) return '--:--';
   return '${s ~/ 60}:${_dos(s % 60)}';
 }
+
+/// "400 m", "1 km", "1,5 km".
+String formatearDistanciaCorta(int metros) => metros < 1000
+    ? '$metros m'
+    : '${NumberFormat('0.##', 'es').format(metros / 1000)} km';
+
+/// "90 s", "2 min", "2 min 30 s" (hasta 119 s se dice en segundos).
+String formatearDuracionCorta(int segundos) {
+  if (segundos < 120) return '$segundos s';
+  final s = segundos % 60;
+  return s == 0 ? '${segundos ~/ 60} min' : '${segundos ~/ 60} min $s s';
+}
+
+/// m:ss ("12:30"); los minutos pueden pasar de 59.
+String formatearMinSeg(int segundos) {
+  final s = segundos < 0 ? 0 : segundos;
+  return '${s ~/ 60}:${_dos(s % 60)}';
+}
+
+/// "45 min", "1 h 30 min", "2 h".
+String formatearHorasMin(int segundos) {
+  final min = segundos ~/ 60;
+  if (min < 60) return '$min min';
+  return min % 60 == 0 ? '${min ~/ 60} h' : '${min ~/ 60} h ${min % 60} min';
+}

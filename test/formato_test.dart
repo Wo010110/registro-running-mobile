@@ -35,4 +35,16 @@ void main() {
     expect(esTranssion('samsung'), isFalse);
     expect(esTranssion(''), isFalse);
   });
+
+  test('distancia y duración cortas para los modos', () {
+    expect(formatearDistanciaCorta(400), '400 m');
+    expect(formatearDistanciaCorta(1000), '1 km');
+    expect(formatearDistanciaCorta(1500), '1,5 km');
+    expect(formatearDuracionCorta(45), '45 s');
+    expect(formatearDuracionCorta(90), '90 s');
+    expect(formatearDuracionCorta(120), '2 min');
+    expect(formatearDuracionCorta(150), '2 min 30 s');
+    expect(formatearMinSeg(750), '12:30');
+    expect(formatearMinSeg(1800), '30:00');
+  });
 }

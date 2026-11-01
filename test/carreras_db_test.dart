@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:heyrun_mobile/core/carrera_calculos.dart';
 import 'package:heyrun_mobile/core/carreras_db.dart';
+import 'package:heyrun_mobile/models/modo_actividad.dart';
 import 'package:heyrun_mobile/models/tipo_actividad.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -201,5 +202,140 @@ void main() {
     final nueva = await migrada.crearCarrera(TipoActividad.correr);
     expect(nueva.origen, origenApp);
     await migrada.cerrar();
+  });
+
+  test('guarda el modo al crear la carrera; null es libre', () async {
+    final libre = await db.crearCarrera(TipoActividad.correr);
+    expect(libre.modo, isNull);
+    final c = await db.crearCarrera(
+      TipoActividad.correr,
+      modo: const ModoIntervalos(tramo: 800, repeticiones: null),
+    );
+    final leida = (await db.carrera(c.id))!.modo! as ModoIntervalos;
+    expect(leida.tramo, 800);
+    expect(leida.repeticiones, isNull);
+    // Un modo libre explícito tampoco se guarda.
+    final otra = await db.crearCarrera(
+      TipoActividad.correr,
+      modo: const ModoLibre(),
+    );
+    expect((await db.carrera(otra.id))!.modo, isNull);
+  });
+
+  test('la pausa recuerda si fue manual o un descanso', () async {
+    final c = await db.crearCarrera(TipoActividad.correr);
+    await db.pausar(c.id, ahora: DateTime.utc(2026, 1, 1, 8, 1));
+    await db.reanudar(c.id, ahora: DateTime.utc(2026, 1, 1, 8, 2));
+    await db.pausar(
+      c.id,
+      ahora: DateTime.utc(2026, 1, 1, 8, 3),
+      descanso: true,
+    );
+    final pausas = await db.pausas(c.id);
+    expect(pausas.map((p) => p.descanso), [false, true]);
+    expect(pausas.last.fin, isNull);
+  });
+
+  test('migra de la v2 a la v3 conservando los datos', () async {
+    final dir = await Directory.systemTemp.createTemp('heyrun_v2');
+    addTearDown(() => dir.delete(recursive: true));
+    final ruta = p.join(dir.path, 'v2.db');
+
+    // Esquema y datos tal como los dejó la v2 instalada en el teléfono.
+    final v2 = await openDatabase(
+      ruta,
+      version: 2,
+      onCreate: (db, _) async {
+        await db.execute('''
+          CREATE TABLE carreras (
+            id TEXT PRIMARY KEY,
+            tipo TEXT NOT NULL DEFAULT 'correr',
+            origen TEXT NOT NULL DEFAULT 'app',
+            estado TEXT NOT NULL,
+            inicio_utc TEXT NOT NULL,
+            fin_utc TEXT,
+            distancia_m REAL NOT NULL DEFAULT 0,
+            tiempo_movimiento_s INTEGER NOT NULL DEFAULT 0,
+            sincronizada INTEGER NOT NULL DEFAULT 0,
+            creado_utc TEXT NOT NULL
+          )''');
+        await db.execute('''
+          CREATE TABLE puntos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            carrera_id TEXT NOT NULL
+              REFERENCES carreras(id) ON DELETE CASCADE,
+            lat REAL NOT NULL,
+            lng REAL NOT NULL,
+            altitud REAL,
+            precision_m REAL NOT NULL,
+            velocidad REAL,
+            instante_utc TEXT NOT NULL,
+            aceptado INTEGER NOT NULL,
+            indice INTEGER NOT NULL
+          )''');
+        await db.execute('''
+          CREATE TABLE pausas (
+            carrera_id TEXT NOT NULL
+              REFERENCES carreras(id) ON DELETE CASCADE,
+            inicio_utc TEXT NOT NULL,
+            fin_utc TEXT
+          )''');
+      },
+    );
+    await v2.insert('carreras', {
+      'id': 'a',
+      'tipo': 'correr',
+      'origen': 'app',
+      'estado': 'terminada',
+      'inicio_utc': '2026-01-01T08:00:00.000Z',
+      'distancia_m': 5000.0,
+      'tiempo_movimiento_s': 1500,
+      'creado_utc': '2026-01-01T08:00:00.000Z',
+    });
+    await v2.insert('puntos', {
+      'carrera_id': 'a',
+      'lat': 4.0,
+      'lng': -74.0,
+      'precision_m': 5.0,
+      'instante_utc': '2026-01-01T08:00:00.000Z',
+      'aceptado': 1,
+      'indice': 0,
+    });
+    await v2.insert('pausas', {
+      'carrera_id': 'a',
+      'inicio_utc': '2026-01-01T08:10:00.000Z',
+      'fin_utc': '2026-01-01T08:11:00.000Z',
+    });
+    await v2.close();
+
+    final migrada = await CarrerasDb.abrir(ruta: ruta);
+    final a = (await migrada.carrera('a'))!;
+    expect(a.origen, origenApp);
+    expect(a.distanciaM, 5000);
+    expect(a.modo, isNull); // lo anterior era libre
+    expect((await migrada.puntos('a')).length, 1);
+    final pausa = (await migrada.pausas('a')).single;
+    expect(pausa.fin, DateTime.utc(2026, 1, 1, 8, 11));
+    expect(pausa.descanso, isFalse); // lo anterior eran pausas manuales
+
+    // Con lo nuevo funcionando sobre la base migrada.
+    final nueva = await migrada.crearCarrera(
+      TipoActividad.correr,
+      modo: const ModoMeta(valor: 10000),
+    );
+    expect((await migrada.carrera(nueva.id))!.modo, isA<ModoMeta>());
+    await migrada.pausar(nueva.id, descanso: true);
+    expect((await migrada.pausas(nueva.id)).single.descanso, isTrue);
+    await migrada.cerrar();
+
+    final cruda = await openDatabase(ruta);
+    final columnas = [
+      for (final t in ['carreras', 'pausas'])
+        for (final f in await cruda.rawQuery('PRAGMA table_info($t)'))
+          '$t.${f['name']}',
+    ];
+    expect(columnas, containsAll(['carreras.modo', 'pausas.motivo']));
+    expect(await cruda.getVersion(), 3);
+    await cruda.close();
   });
 }

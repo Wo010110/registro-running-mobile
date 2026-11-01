@@ -4,6 +4,7 @@ import 'package:hugeicons/hugeicons.dart';
 import 'package:intl/intl.dart';
 
 import '../core/formato.dart';
+import '../models/modo_actividad.dart';
 import '../providers/grabacion_provider.dart';
 import '../theme/app_colors.dart';
 import '../widgets/actividad_paneles.dart';
@@ -142,13 +143,13 @@ class ResumenScreen extends ConsumerWidget {
                               ),
                               children: [
                                 Text(
-                                  '${g.tipo.etiqueta} · $fecha'.toUpperCase(),
+                                  '${g.tipo.etiqueta} · $fecha',
                                   textAlign: TextAlign.center,
                                   style: TextStyle(
                                     color: c.textoSecundario,
                                     fontSize: 15,
                                     fontWeight: FontWeight.w700,
-                                    letterSpacing: 1,
+                                    letterSpacing: 0.3,
                                   ),
                                 ),
                                 const SizedBox(height: 6),
@@ -177,8 +178,13 @@ class ResumenScreen extends ConsumerWidget {
                                         formatearTiempo(r.tiempoMovimientoS),
                                       ),
                                     DatoActividad(
-                                      'Ritmo medio',
-                                      '${formatearRitmo(r.ritmoMedioSKm)} /km',
+                                      // Los descansos son pausas: el ritmo es
+                                      // solo el de los tramos de carrera.
+                                      g.modo is ModoIntervalos
+                                          ? 'Ritmo tramos'
+                                          : 'Ritmo medio',
+                                      formatearRitmo(r.ritmoMedioSKm),
+                                      unidad: '/km',
                                     ),
                                   ],
                                 ),

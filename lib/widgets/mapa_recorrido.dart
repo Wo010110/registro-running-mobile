@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:hugeicons/hugeicons.dart';
@@ -14,6 +16,12 @@ const double _zoomGrabando = 17;
 const double _zoomCerca = 19;
 const double _grosorLinea = 7;
 
+/// Zoom largo: de la vista del mundo a la primera posición, y al empezar.
+const _duracionZoom = Duration(milliseconds: 1600);
+
+/// Desplazamiento de la cámara a cada posición nueva.
+const _duracionPaso = Duration(milliseconds: 900);
+
 /// Mapa con la línea del recorrido. [enVivo]: sigue la posición hasta que el
 /// usuario mueve el mapa y ofrece recentrar; si no, encuadra todo el recorrido.
 class MapaRecorrido extends StatefulWidget {
@@ -24,9 +32,11 @@ class MapaRecorrido extends StatefulWidget {
     this.enVivo = false,
     this.atribucionArriba = false,
     this.acercar = false,
+    this.retardoAcercar = Duration.zero,
   });
 
-  final List<PuntoGps> ruta;
+  /// Trozos de la línea (uno por tramo entre pausas).
+  final List<List<PuntoGps>> ruta;
   final PuntoGps? posicion;
   final bool enVivo;
 
@@ -38,6 +48,10 @@ class MapaRecorrido extends StatefulWidget {
   /// empezar la actividad.
   final bool acercar;
 
+  /// Espera antes de acercar, para que el zoom no compita con las entradas de
+  /// los paneles.
+  final Duration retardoAcercar;
+
   @override
   State<MapaRecorrido> createState() => _MapaRecorridoState();
 }
@@ -45,22 +59,33 @@ class MapaRecorrido extends StatefulWidget {
 class _MapaRecorridoState extends State<MapaRecorrido>
     with SingleTickerProviderStateMixin {
   final _mapa = MapController();
-  late final AnimationController _zoomAnim;
-  var _zoomDesde = _zoomGrabando;
+  late final AnimationController _anim;
+  Timer? _espera;
   var _acercarPendiente = false;
+  var _esperaTerminada = false;
   LatLng? _ultimaPos;
   var _listo = false;
   var _seguir = true;
   var _centrado = false;
-  var _linea = <LatLng>[];
+  var _lineas = <List<LatLng>>[];
+  var _puntosLinea = 0;
+
+  // Movimiento de cámara en curso: se interpola del estado de salida al de
+  // llegada con [_curva].
+  var _centroDesde = const LatLng(0, 0);
+  var _zoomDesde = _zoomGrabando;
+  var _zoomHasta = _zoomGrabando;
+  LatLng? _centroHasta;
+  Curve _curva = Curves.easeOut;
+
+  /// En un zoom largo el centro de llegada es la posición viva, que sigue
+  /// llegando mientras dura.
+  var _sigueVivo = false;
 
   @override
   void initState() {
     super.initState();
-    _zoomAnim = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1600),
-    )..addListener(_pasoZoom);
+    _anim = AnimationController(vsync: this)..addListener(_pasoCamara);
     _actualizarLinea();
   }
 
@@ -69,16 +94,62 @@ class _MapaRecorridoState extends State<MapaRecorrido>
     super.didUpdateWidget(anterior);
     _actualizarLinea();
     _ultimaPos = _actual ?? _ultimaPos;
-    if (widget.acercar && !anterior.acercar) _acercarPendiente = true;
-    if (_acercarPendiente) _acercar();
-    if (widget.enVivo && _seguir && !_zoomAnim.isAnimating) _centrar();
+    if (widget.acercar && !anterior.acercar) {
+      _acercarPendiente = true;
+      _espera?.cancel();
+      _esperaTerminada = widget.retardoAcercar == Duration.zero;
+      if (!_esperaTerminada) {
+        _espera = Timer(widget.retardoAcercar, () {
+          _esperaTerminada = true;
+          _acercar();
+        });
+      }
+    }
+    if (_acercarPendiente && _esperaTerminada) _acercar();
+    if (widget.enVivo &&
+        _seguir &&
+        widget.posicion != anterior.posicion &&
+        !(_anim.isAnimating && _sigueVivo)) {
+      _centrar();
+    }
   }
 
   @override
   void dispose() {
-    _zoomAnim.dispose();
+    _espera?.cancel();
+    _anim.dispose();
     _mapa.dispose();
     super.dispose();
+  }
+
+  /// Mueve la cámara hasta [zoom] y la posición actual con una animación. Una
+  /// nueva cancela la anterior y parte de donde esté la cámara en ese momento.
+  void _irA(double zoom, Duration duracion, Curve curva, {bool vivo = false}) {
+    final destino = _actual ?? _ultimaPos;
+    if (!_listo || destino == null) return;
+    final camara = _mapa.camera;
+    _centroDesde = camara.center;
+    _zoomDesde = camara.zoom;
+    _centroHasta = destino;
+    _zoomHasta = zoom;
+    _curva = curva;
+    _sigueVivo = vivo && (zoom - camara.zoom).abs() > 0.01;
+    _anim.duration = duracion;
+    _anim.forward(from: 0);
+  }
+
+  void _pasoCamara() {
+    final destino = _sigueVivo ? (_actual ?? _ultimaPos) : _centroHasta;
+    if (!_listo || destino == null) return;
+    final t = _curva.transform(_anim.value);
+    double entre(double a, double b) => a + (b - a) * t;
+    _mapa.move(
+      LatLng(
+        entre(_centroDesde.latitude, destino.latitude),
+        entre(_centroDesde.longitude, destino.longitude),
+      ),
+      entre(_zoomDesde, _zoomHasta),
+    );
   }
 
   /// Zoom suave hasta [_zoomCerca], siguiendo el punto GPS. Al iniciar la
@@ -86,26 +157,22 @@ class _MapaRecorridoState extends State<MapaRecorrido>
   /// se usa la última conocida y, si no hay ninguna, se reintenta en cada
   /// actualización.
   void _acercar() {
-    final centro = _actual ?? _ultimaPos;
-    if (!_listo || centro == null) return;
+    if (!_listo || (_actual ?? _ultimaPos) == null) return;
     _acercarPendiente = false;
-    _zoomDesde = _mapa.camera.zoom;
     _seguir = true;
-    _zoomAnim.forward(from: 0);
+    _centrado = true;
+    _irA(_zoomCerca, _duracionZoom, Curves.easeInOutCubic, vivo: true);
   }
 
-  void _pasoZoom() {
-    final centro = _actual ?? _ultimaPos;
-    if (!_listo || centro == null) return;
-    final t = Curves.easeInOutCubic.transform(_zoomAnim.value);
-    _mapa.move(centro, _zoomDesde + (_zoomCerca - _zoomDesde) * t);
-  }
-
-  // shortcut: reconvierte toda la ruta cuando crece; con ~5400 puntos es
-  // barato, mejorar solo si se graban actividades de varias horas.
+  // shortcut: reconvierte todos los trozos cuando crece la ruta; con ~5400
+  // puntos es barato, mejorar solo si se graban actividades de varias horas.
   void _actualizarLinea() {
-    if (_linea.length == widget.ruta.length) return;
-    _linea = [for (final p in widget.ruta) LatLng(p.lat, p.lng)];
+    final total = widget.ruta.fold(0, (n, t) => n + t.length);
+    if (total == _puntosLinea && widget.ruta.length == _lineas.length) return;
+    _puntosLinea = total;
+    _lineas = [
+      for (final t in widget.ruta) [for (final p in t) LatLng(p.lat, p.lng)],
+    ];
   }
 
   LatLng? get _actual {
@@ -115,12 +182,13 @@ class _MapaRecorridoState extends State<MapaRecorrido>
 
   /// Del último punto aceptado a la posición actual, para que la línea llegue
   /// al marcador aunque el filtro haya descartado los últimos movimientos.
-  /// Solo visual: no entra en la distancia ni en la base.
+  /// Solo visual: no entra en la distancia ni en la base. Tras una pausa el
+  /// trozo nuevo está vacío y no se dibuja hasta tener su primer punto.
   List<LatLng>? get _tramoVivo {
     final p = widget.posicion;
-    if (!widget.enVivo || p == null || _linea.isEmpty) return null;
-    if (p.precisionM > precisionMaxM) return null;
-    return [_linea.last, LatLng(p.lat, p.lng)];
+    if (!widget.enVivo || p == null || _lineas.isEmpty) return null;
+    if (_lineas.last.isEmpty || p.precisionM > precisionMaxM) return null;
+    return [_lineas.last.last, LatLng(p.lat, p.lng)];
   }
 
   // Único sitio donde se define el mapa base. Con MAPTILER_KEY: MapTiler
@@ -152,35 +220,43 @@ class _MapaRecorridoState extends State<MapaRecorrido>
   }
 
   void _centrar() {
-    final actual = _actual;
-    if (!_listo || actual == null) return;
-    _mapa.move(
-      actual,
-      _centrado
-          ? _mapa.camera.zoom
-          : (widget.acercar ? _zoomCerca : _zoomGrabando),
-    );
+    if (!_listo || _actual == null) return;
+    if (_centrado) {
+      _irA(_mapa.camera.zoom, _duracionPaso, Curves.easeOut);
+      return;
+    }
+    // Primera posición: del zoom del mundo (si no había ninguna) al de
+    // grabación.
     _centrado = true;
+    final zoom = widget.acercar ? _zoomCerca : _zoomGrabando;
+    final cambia = (zoom - _mapa.camera.zoom).abs() > 0.01;
+    _irA(
+      zoom,
+      cambia ? _duracionZoom : _duracionPaso,
+      cambia ? Curves.easeInOutCubic : Curves.easeOut,
+      vivo: true,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
-    final fija = !widget.enVivo && _linea.length >= 2;
+    final fija = !widget.enVivo && _puntosLinea >= 2;
+    final puntos = [for (final t in _lineas) ...t];
     return Stack(
       children: [
         FlutterMap(
           mapController: _mapa,
           options: MapOptions(
             initialCenter:
-                _actual ?? (_linea.isEmpty ? const LatLng(0, 0) : _linea.last),
-            initialZoom: _actual == null && _linea.isEmpty
+                _actual ?? (puntos.isEmpty ? const LatLng(0, 0) : puntos.last),
+            initialZoom: _actual == null && puntos.isEmpty
                 ? 2
                 : (widget.acercar ? _zoomCerca : _zoomGrabando),
             maxZoom: _zoomMax,
             initialCameraFit: fija
                 ? CameraFit.coordinates(
-                    coordinates: _linea,
+                    coordinates: puntos,
                     padding: const EdgeInsets.all(32),
                     maxZoom: 18,
                   )
@@ -198,6 +274,7 @@ class _MapaRecorridoState extends State<MapaRecorrido>
               if (widget.enVivo) _centrar();
             },
             onPositionChanged: (camara, porGesto) {
+              if (porGesto && _anim.isAnimating) _anim.stop();
               if (porGesto && _seguir && widget.enVivo && !widget.acercar) {
                 setState(() => _seguir = false);
               }
@@ -208,14 +285,15 @@ class _MapaRecorridoState extends State<MapaRecorrido>
             PolylineLayer(
               polylines: [
                 // flutter_map falla con una línea vacía (LatLngBounds).
-                if (_linea.length >= 2)
-                  Polyline(
-                    points: _linea,
-                    strokeWidth: _grosorLinea,
-                    color: c.accion,
-                    borderStrokeWidth: 1.5,
-                    borderColor: c.sobreAccion,
-                  ),
+                for (final trozo in _lineas)
+                  if (trozo.length >= 2)
+                    Polyline(
+                      points: trozo,
+                      strokeWidth: _grosorLinea,
+                      color: c.accion,
+                      borderStrokeWidth: 1.5,
+                      borderColor: c.sobreAccion,
+                    ),
                 if (_tramoVivo != null)
                   Polyline(
                     points: _tramoVivo!,
@@ -242,11 +320,11 @@ class _MapaRecorridoState extends State<MapaRecorrido>
                 ],
               ),
             // Inicio y fin del recorrido terminado.
-            if (!widget.enVivo && _linea.length >= 2)
+            if (fija)
               MarkerLayer(
                 markers: [
                   Marker(
-                    point: _linea.first,
+                    point: puntos.first,
                     width: 18,
                     height: 18,
                     child: DecoratedBox(
@@ -258,7 +336,7 @@ class _MapaRecorridoState extends State<MapaRecorrido>
                     ),
                   ),
                   Marker(
-                    point: _linea.last,
+                    point: puntos.last,
                     width: 28,
                     height: 28,
                     child: DecoratedBox(
