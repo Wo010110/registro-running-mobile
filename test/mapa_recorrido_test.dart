@@ -122,4 +122,36 @@ void main() {
     final capa = t.widget<PolylineLayer>(find.byType(PolylineLayer));
     expect(capa.polylines.length, 2);
   });
+
+  testWidgets('sin posición en vivo se reencuadra al llegar la ruta', (
+    t,
+  ) async {
+    Widget app(List<List<PuntoGps>> ruta) => MaterialApp(
+      home: SizedBox(width: 400, height: 300, child: MapaRecorrido(ruta: ruta)),
+    );
+    await t.pumpWidget(app(const []));
+    await t.pump(const Duration(milliseconds: 200));
+    expect(_camara(t).zoom, 2);
+    // La ruta llega después (edición: el provider es asíncrono).
+    await t.pumpWidget(
+      app([
+        [_punto(10.0), _punto(10.002), _punto(10.004)],
+      ]),
+    );
+    await t.pump(const Duration(milliseconds: 100));
+    await t.pump(const Duration(milliseconds: 1500));
+    expect(_camara(t).zoom, greaterThan(12));
+    expect(_camara(t).center.latitude, closeTo(10.002, 0.001));
+    // Si la ruta cambia, vuelve a encuadrar todo.
+    await t.pumpWidget(
+      app([
+        [_punto(10.0), _punto(10.002), _punto(10.004)],
+        [_punto(10.3), _punto(10.304)],
+      ]),
+    );
+    await t.pump(const Duration(milliseconds: 100));
+    await t.pump(const Duration(milliseconds: 1500));
+    expect(_camara(t).center.latitude, closeTo(10.152, 0.01));
+    expect(_camara(t).zoom, lessThan(12));
+  });
 }

@@ -335,7 +335,7 @@ void main() {
           '$t.${f['name']}',
     ];
     expect(columnas, containsAll(['carreras.modo', 'pausas.motivo']));
-    expect(await cruda.getVersion(), 4);
+    expect(await cruda.getVersion(), 5);
     await cruda.close();
   });
 
@@ -474,7 +474,7 @@ void main() {
         '${f['name']}',
     ];
     expect(columnas, containsAll(['titulo', 'descripcion', 'intensidad']));
-    expect(await cruda.getVersion(), 4);
+    expect(await cruda.getVersion(), 5);
     // Sin tabla de fotos.
     final tablas = [
       for (final t in await cruda.rawQuery(
@@ -483,6 +483,197 @@ void main() {
         '${t['name']}',
     ];
     expect(tablas, isNot(contains('fotos')));
+    await cruda.close();
+  });
+
+  group('récords', () {
+    Future<String> terminada({
+      TipoActividad tipo = TipoActividad.correr,
+      String origen = origenApp,
+      int dia = 1,
+    }) async {
+      final c = await db.crearCarrera(
+        tipo,
+        origen: origen,
+        inicio: DateTime.utc(2026, 1, dia, 8),
+      );
+      await db.terminar(c.id, distanciaM: 5000, tiempoMovimientoS: 1500);
+      return c.id;
+    }
+
+    test(
+      'guarda los tramos, marca la carrera y devuelve el mejor tiempo',
+      () async {
+        final a = await terminada(dia: 1);
+        final b = await terminada(dia: 2);
+        expect((await db.carrerasSinTramos()).map((c) => c.id), [a, b]);
+        await db.guardarTramos(a, {1000: 300, 5000: 1600});
+        await db.guardarTramos(b, {1000: 280});
+        expect(await db.carrerasSinTramos(), isEmpty);
+
+        final r = await db.mejoresRecords();
+        expect(r[1000]!.tiempoS, 280);
+        expect(r[1000]!.carreraId, b);
+        expect(r[1000]!.inicioUtc, DateTime.utc(2026, 1, 2, 8));
+        expect(r[5000]!.carreraId, a);
+        expect(r[5000]!.ritmoSKm, closeTo(320, 1e-9));
+        expect(r.containsKey(10000), isFalse);
+      },
+    );
+
+    test('guardar de nuevo reemplaza los tramos', () async {
+      final a = await terminada();
+      await db.guardarTramos(a, {1000: 300, 5000: 1600});
+      await db.guardarTramos(a, {1000: 290});
+      final r = await db.mejoresRecords();
+      expect(r[1000]!.tiempoS, 290);
+      expect(r.containsKey(5000), isFalse);
+    });
+
+    test('una carrera sin tramos también queda calculada', () async {
+      final a = await terminada();
+      await db.guardarTramos(a, {});
+      expect(await db.carrerasSinTramos(), isEmpty);
+      expect(await db.mejoresRecords(), isEmpty);
+    });
+
+    test('solo cuentan correr, origen app y terminadas', () async {
+      final caminar = await terminada(tipo: TipoActividad.caminar);
+      final prueba = await terminada(origen: origenPrueba);
+      final abierta = (await db.crearCarrera(TipoActividad.correr)).id;
+      final buena = await terminada(dia: 3);
+      for (final id in [caminar, prueba, abierta]) {
+        await db.guardarTramos(id, {1000: 100});
+      }
+      await db.guardarTramos(buena, {1000: 400});
+      expect((await db.mejoresRecords())[1000]!.carreraId, buena);
+      // La de prueba no se ofrece para calcular.
+      expect((await db.carrerasSinTramos()), isEmpty);
+    });
+
+    test(
+      'cambiar el tipo a caminar la saca de los récords sin recalcular',
+      () async {
+        final a = await terminada();
+        await db.guardarTramos(a, {1000: 250});
+        expect((await db.mejoresRecords())[1000]!.carreraId, a);
+        await db.actualizarDetalles(a, tipo: TipoActividad.caminar);
+        expect(await db.mejoresRecords(), isEmpty);
+        expect(await db.carrerasSinTramos(), isEmpty); // no se recalcula
+        await db.actualizarDetalles(a, tipo: TipoActividad.correr);
+        expect((await db.mejoresRecords())[1000]!.tiempoS, 250);
+      },
+    );
+
+    test('eliminar la actividad borra sus tramos', () async {
+      final a = await terminada();
+      final b = await terminada(dia: 2);
+      await db.guardarTramos(a, {1000: 250});
+      await db.guardarTramos(b, {1000: 300});
+      await db.descartar(a);
+      final r = await db.mejoresRecords();
+      expect(r[1000]!.carreraId, b);
+      expect(r[1000]!.tiempoS, 300);
+    });
+  });
+
+  test('migra de la v4 a la v5 conservando los datos', () async {
+    final dir = await Directory.systemTemp.createTemp('heyrun_v4');
+    addTearDown(() => dir.delete(recursive: true));
+    final ruta = p.join(dir.path, 'v4.db');
+
+    // Esquema y datos tal como los dejó la v4 instalada en el teléfono.
+    final v4 = await openDatabase(
+      ruta,
+      version: 4,
+      onCreate: (db, _) async {
+        await db.execute('''
+          CREATE TABLE carreras (
+            id TEXT PRIMARY KEY,
+            tipo TEXT NOT NULL DEFAULT 'correr',
+            origen TEXT NOT NULL DEFAULT 'app',
+            estado TEXT NOT NULL,
+            inicio_utc TEXT NOT NULL,
+            fin_utc TEXT,
+            distancia_m REAL NOT NULL DEFAULT 0,
+            tiempo_movimiento_s INTEGER NOT NULL DEFAULT 0,
+            sincronizada INTEGER NOT NULL DEFAULT 0,
+            creado_utc TEXT NOT NULL,
+            modo TEXT,
+            titulo TEXT,
+            descripcion TEXT,
+            intensidad INTEGER
+          )''');
+        await db.execute('''
+          CREATE TABLE puntos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            carrera_id TEXT NOT NULL
+              REFERENCES carreras(id) ON DELETE CASCADE,
+            lat REAL NOT NULL,
+            lng REAL NOT NULL,
+            altitud REAL,
+            precision_m REAL NOT NULL,
+            velocidad REAL,
+            instante_utc TEXT NOT NULL,
+            aceptado INTEGER NOT NULL,
+            indice INTEGER NOT NULL
+          )''');
+        await db.execute('''
+          CREATE TABLE pausas (
+            carrera_id TEXT NOT NULL
+              REFERENCES carreras(id) ON DELETE CASCADE,
+            inicio_utc TEXT NOT NULL,
+            fin_utc TEXT,
+            motivo TEXT NOT NULL DEFAULT 'manual'
+          )''');
+      },
+    );
+    await v4.insert('carreras', {
+      'id': 'a',
+      'tipo': 'correr',
+      'origen': 'app',
+      'estado': 'terminada',
+      'inicio_utc': '2026-01-01T08:00:00.000Z',
+      'distancia_m': 5000.0,
+      'tiempo_movimiento_s': 1500,
+      'creado_utc': '2026-01-01T08:00:00.000Z',
+      'titulo': 'Mi tirada',
+      'intensidad': 3,
+    });
+    await v4.insert('puntos', {
+      'carrera_id': 'a',
+      'lat': 4.0,
+      'lng': -74.0,
+      'precision_m': 5.0,
+      'instante_utc': '2026-01-01T08:00:00.000Z',
+      'aceptado': 1,
+      'indice': 0,
+    });
+    await v4.close();
+
+    final migrada = await CarrerasDb.abrir(ruta: ruta);
+    final a = (await migrada.carrera('a'))!;
+    expect(a.titulo, 'Mi tirada');
+    expect(a.intensidad, 3);
+    expect(a.distanciaM, 5000);
+    expect((await migrada.puntos('a')).length, 1);
+    // Lo anterior queda pendiente de calcular y los récords arrancan vacíos.
+    expect((await migrada.carrerasSinTramos()).map((c) => c.id), ['a']);
+    expect(await migrada.mejoresRecords(), isEmpty);
+    await migrada.guardarTramos('a', {1000: 300});
+    expect((await migrada.mejoresRecords())[1000]!.tiempoS, 300);
+    expect(await migrada.carrerasSinTramos(), isEmpty);
+    await migrada.descartar('a');
+    expect(await migrada.mejoresRecords(), isEmpty);
+    await migrada.cerrar();
+
+    final cruda = await openDatabase(ruta);
+    expect(await cruda.getVersion(), 5);
+    final columnas = [
+      for (final f in await cruda.rawQuery('PRAGMA table_info(carreras)'))
+        '${f['name']}',
+    ];
+    expect(columnas, contains('tramos_calculados'));
     await cruda.close();
   });
 }

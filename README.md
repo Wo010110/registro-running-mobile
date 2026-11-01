@@ -19,10 +19,20 @@ Para medir el rendimiento real (fluidez del mapa, zoom, inicio de la actividad) 
 profile, porque en debug todo va más lento:
 
 ```
-.un.ps1 -Profile
+.\run.ps1 -Profile
 ```
 
 En profile no hay hot reload. Lo demás es igual.
+
+Para usar la API de Railway en vez de la de la laptop (no hace falta levantar el backend ni
+estar en la misma wifi):
+
+```
+.\run.ps1 -Nube
+```
+
+Se puede combinar: `.\run.ps1 -Nube -Profile`. La cuenta de la nube es distinta de la local:
+antes de cambiar, cierra sesión en la app y regístrate de nuevo.
 
 El script detecta la IP de la laptop y lanza `flutter run` con
 `--dart-define=API_URL=http://<ip>:8000`. `GOOGLE_SERVER_CLIENT_ID` va vacío por ahora:

@@ -132,6 +132,13 @@ class _DbFalla implements CarrerasDb {
     tipo: tipo,
   );
   @override
+  Future<void> guardarTramos(String carreraId, Map<double, double> tramos) =>
+      real.guardarTramos(carreraId, tramos);
+  @override
+  Future<List<CarreraLocal>> carrerasSinTramos() => real.carrerasSinTramos();
+  @override
+  Future<Map<double, RecordPersonal>> mejoresRecords() => real.mejoresRecords();
+  @override
   Future<CarreraLocal?> carrera(String id) => real.carrera(id);
   @override
   Future<List<PuntoGps>> puntos(String carreraId) => real.puntos(carreraId);
@@ -561,6 +568,27 @@ void main() {
     test('con una actividad en curso no hay pendiente que ofrecer', () async {
       await iniciar();
       expect(await notifier().carreraPendiente(), isNull);
+    });
+  });
+
+  group('récords', () {
+    test('al terminar se guardan los mejores tramos', () async {
+      await iniciar();
+      emitirTramo(0, 40); // 120 m a 3 m/s
+      await notifier().terminar();
+      final r = await db.mejoresRecords();
+      expect(r[100]!.tiempoS, closeTo(100 / 3, 0.3));
+      expect(r.containsKey(500), isFalse);
+      expect(await db.carrerasSinTramos(), isEmpty);
+    });
+
+    test('Terminar y guardar una pendiente también los calcula', () async {
+      final carrera = await db.crearCarrera(TipoActividad.correr, inicio: _t0);
+      for (var s = 0; s <= 40; s++) {
+        await db.insertarPunto(carrera.id, _punto(s));
+      }
+      await notifier().terminarPendiente(carrera);
+      expect((await db.mejoresRecords())[100]!.carreraId, carrera.id);
     });
   });
 

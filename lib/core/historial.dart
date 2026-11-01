@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import '../models/clasificatoria.dart';
 import '../models/tipo_actividad.dart';
 import 'carrera_calculos.dart';
 import 'carreras_db.dart';
@@ -74,4 +75,30 @@ List<(double, double)> trazoNormalizado(
     for (var i = 0; i < m.length; i++)
       (((xs[i] - minX) * escala + dx) / aspecto, (ys[i] - minY) * escala + dy),
   ];
+}
+
+/// Kilómetros de [carreras] dentro del período, en hora local: la semana de
+/// lunes a domingo y el mes calendario de [ahora], o todo.
+double kmDelPeriodo(
+  Iterable<CarreraLocal> carreras,
+  PeriodoClasificatoria periodo,
+  DateTime ahora,
+) {
+  final dia = DateTime.utc(ahora.year, ahora.month, ahora.day);
+  final lunes = dia.subtract(Duration(days: dia.weekday - 1));
+  var metros = 0.0;
+  for (final c in carreras) {
+    final l = c.inicioUtc.toLocal();
+    final enPeriodo = switch (periodo) {
+      PeriodoClasificatoria.semana => () {
+        final i = DateTime.utc(l.year, l.month, l.day).difference(lunes).inDays;
+        return i >= 0 && i < 7;
+      }(),
+      PeriodoClasificatoria.mes =>
+        l.year == ahora.year && l.month == ahora.month,
+      PeriodoClasificatoria.historico => true,
+    };
+    if (enPeriodo) metros += c.distanciaM;
+  }
+  return metros / 1000;
 }

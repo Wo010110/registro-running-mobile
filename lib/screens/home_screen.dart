@@ -4,11 +4,13 @@ import 'package:hugeicons/hugeicons.dart';
 
 import '../providers/auth_provider.dart';
 import '../providers/grabacion_provider.dart';
+import '../providers/navegacion_provider.dart';
+import '../providers/notificacion_provider.dart';
 import '../theme/app_colors.dart';
 import '../widgets/aviso_recuperacion.dart';
 
 import 'actividad_screen.dart';
-import 'tabs/actividades_tab.dart';
+import 'tabs/clasificatoria_tab.dart';
 import 'tabs/inicio_tab.dart';
 import 'tabs/perfil_tab.dart';
 import 'tabs/retos_tab.dart';
@@ -22,8 +24,6 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
-  var _pestana = 0;
-
   @override
   void initState() {
     super.initState();
@@ -41,8 +41,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
+    // Mantiene al día la notificación mientras se graba.
+    ref.watch(notificacionVivaProvider);
     final sinConexion = ref.watch(authProvider.select((a) => a.sinConexion));
     final enCurso = ref.watch(grabacionProvider.select((g) => g.enCurso));
+    final pestana = ref.watch(pestanaProvider);
     return Scaffold(
       body: SafeArea(
         bottom: false,
@@ -76,10 +79,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ),
             Expanded(
               child: IndexedStack(
-                index: _pestana,
+                index: pestana,
                 children: const [
                   InicioTab(),
-                  ActividadesTab(),
+                  ClasificatoriaTab(),
                   RetosTab(),
                   PerfilTab(),
                 ],
@@ -89,9 +92,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ),
       ),
       bottomNavigationBar: _BarraInferior(
-        pestana: _pestana,
+        pestana: pestana,
         enCurso: enCurso,
-        onPestana: (i) => setState(() => _pestana = i),
+        onPestana: ref.read(pestanaProvider.notifier).ir,
         onEmpezar: () => _empezar(enCurso),
       ),
     );
@@ -132,8 +135,8 @@ class _BarraInferior extends StatelessWidget {
                 () => onPestana(0),
               ),
               _Destino(
-                'Actividades',
-                HugeIcons.strokeRoundedActivity01,
+                'Clasificatoria',
+                HugeIcons.strokeRoundedTrophy,
                 pestana == 1,
                 () => onPestana(1),
               ),
@@ -206,13 +209,17 @@ class _Destino extends StatelessWidget {
           children: [
             HugeIcon(icon: icono, color: color, size: 24),
             const SizedBox(height: 4),
-            Text(
-              etiqueta,
-              maxLines: 1,
-              style: TextStyle(
-                color: color,
-                fontSize: 11,
-                fontWeight: activo ? FontWeight.w700 : FontWeight.w500,
+            // Escala el rótulo si no cabe (Clasificatoria es largo).
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                etiqueta,
+                maxLines: 1,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 11,
+                  fontWeight: activo ? FontWeight.w700 : FontWeight.w500,
+                ),
               ),
             ),
           ],

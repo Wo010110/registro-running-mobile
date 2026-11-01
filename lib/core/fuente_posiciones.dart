@@ -21,8 +21,6 @@ class FuenteGeolocator implements FuentePosiciones {
   Stream<PuntoGps> escuchar({required bool conServicio}) {
     // shortcut: solo configura Android; iOS no está en el alcance. Mejorar al
     // publicar en iOS.
-    // shortcut: el texto de la notificación es fijo; mostrar tiempo y
-    // distancia en vivo requiere actualizarla desde el notifier.
     final ajustes = AndroidSettings(
       accuracy: LocationAccuracy.bestForNavigation,
       distanceFilter: 0,

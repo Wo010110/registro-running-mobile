@@ -70,3 +70,10 @@ String formatearHorasMin(int segundos) {
   if (min < 60) return '$min min';
   return min % 60 == 0 ? '${min ~/ 60} h' : '${min ~/ 60} h ${min % 60} min';
 }
+
+/// Tiempo de un récord: "0:14", "33:45" o "1:25:40".
+String formatearTiempoRecord(double segundos) {
+  final s = segundos.round();
+  if (s < 3600) return '${s ~/ 60}:${_dos(s % 60)}';
+  return '${s ~/ 3600}:${_dos(s ~/ 60 % 60)}:${_dos(s % 60)}';
+}

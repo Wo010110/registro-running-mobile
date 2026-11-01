@@ -3,6 +3,7 @@ import 'package:hugeicons/hugeicons.dart';
 
 import '../../core/datos_ejemplo.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/medalla_tarjeta.dart';
 import '../../widgets/tarjeta.dart';
 
 class RetosTab extends StatelessWidget {
@@ -88,57 +89,9 @@ class RetosTab extends StatelessWidget {
           mainAxisSpacing: 12,
           crossAxisSpacing: 12,
           childAspectRatio: .85,
-          children: [for (final m in medallasEjemplo) _Medalla(m)],
+          children: [for (final m in medallasEjemplo) MedallaTarjeta(m)],
         ),
       ],
-    );
-  }
-}
-
-class _Medalla extends StatelessWidget {
-  const _Medalla(this.medalla);
-
-  final MedallaEjemplo medalla;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = AppColors.of(context);
-    final color = medalla.ganada ? c.medalla : c.textoDeshabilitado;
-    return Tarjeta(
-      padding: const EdgeInsets.all(10),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            width: 52,
-            height: 52,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: color.withValues(alpha: .16),
-              border: Border.all(color: color, width: 2),
-            ),
-            child: Center(
-              child: HugeIcon(
-                icon: HugeIcons.strokeRoundedMedal01,
-                color: color,
-                size: 26,
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            medalla.nombre,
-            textAlign: TextAlign.center,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: medalla.ganada ? c.textoPrincipal : c.textoTenue,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

@@ -8,6 +8,7 @@ import '../core/carrera_calculos.dart';
 import '../core/carreras_db.dart';
 import '../core/fuente_posiciones.dart';
 import '../core/motor_modos.dart';
+import '../core/records.dart';
 import '../models/modo_actividad.dart';
 import '../models/tipo_actividad.dart';
 
@@ -494,6 +495,11 @@ class GrabacionNotifier extends Notifier<GrabacionState> {
         tiempoMovimientoS: r.tiempoMovimientoS,
         fin: fin,
       );
+      // Los récords se calculan al cerrar; si falla, quedan pendientes y se
+      // calculan al abrir el Perfil.
+      try {
+        await _db.guardarTramos(c.id, mejoresTramos(puntos, pausas));
+      } catch (_) {}
       _carrera = c;
       _tipo = c.tipo;
       _puntos = puntos;

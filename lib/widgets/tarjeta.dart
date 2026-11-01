@@ -36,10 +36,13 @@ class Tarjeta extends StatelessWidget {
 
 /// Título de sección con texto opcional a la derecha.
 class TituloSeccion extends StatelessWidget {
-  const TituloSeccion(this.texto, {super.key, this.accion});
+  const TituloSeccion(this.texto, {super.key, this.accion, this.alTocar});
 
   final String texto;
   final String? accion;
+
+  /// Si se da, [accion] es un enlace que lo ejecuta.
+  final VoidCallback? alTocar;
 
   @override
   Widget build(BuildContext context) {
@@ -49,18 +52,29 @@ class TituloSeccion extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            texto,
-            style: TextStyle(
-              color: c.textoPrincipal,
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
+          Flexible(
+            child: Text(
+              texto,
+              style: TextStyle(
+                color: c.textoPrincipal,
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
           if (accion != null)
-            Text(
-              accion!,
-              style: TextStyle(color: c.primario, fontWeight: FontWeight.w600),
+            InkWell(
+              onTap: alTocar,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Text(
+                  accion!,
+                  style: TextStyle(
+                    color: c.primario,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
             ),
         ],
       ),

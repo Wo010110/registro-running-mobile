@@ -1,20 +1,25 @@
 # Lanza la app en el KM7 apuntando a la API local de esta laptop (puerto 8000).
 # -Profile: modo profile, para medir el rendimiento real (debug va más lento).
-param([switch]$Profile)
+# -Nube: apunta a la API de Railway; no hace falta la laptop ni la misma wifi.
+param([switch]$Profile, [switch]$Nube)
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
 $env:Path += ";C:\Users\osori\AppData\Local\Android\Sdk\platform-tools"
 
-# IP LAN: adaptador físico activo (wifi o ethernet) con gateway. Se excluyen
-# los virtuales (VPN como ProTUN) y se prefiere la wifi, que es la red que
-# comparte con el teléfono.
-$cfg = Get-NetIPConfiguration |
-    Where-Object { $_.IPv4DefaultGateway -and $_.NetAdapter.Status -eq 'Up' -and -not $_.NetAdapter.Virtual } |
-    Sort-Object { $_.InterfaceAlias -notmatch 'Wi-?Fi|Wireless|WLAN' } |
-    Select-Object -First 1
-if (-not $cfg) { throw 'No se encontro un adaptador de red con gateway. Esta la laptop en la wifi?' }
-$ip = $cfg.IPv4Address.IPAddress
-$apiUrl = "http://${ip}:8000"
+if ($Nube) {
+    $apiUrl = 'https://registro-running-backend-production.up.railway.app'
+} else {
+    # IP LAN: adaptador físico activo (wifi o ethernet) con gateway. Se excluyen
+    # los virtuales (VPN como ProTUN) y se prefiere la wifi, que es la red que
+    # comparte con el teléfono.
+    $cfg = Get-NetIPConfiguration |
+        Where-Object { $_.IPv4DefaultGateway -and $_.NetAdapter.Status -eq 'Up' -and -not $_.NetAdapter.Virtual } |
+        Sort-Object { $_.InterfaceAlias -notmatch 'Wi-?Fi|Wireless|WLAN' } |
+        Select-Object -First 1
+    if (-not $cfg) { throw 'No se encontro un adaptador de red con gateway. Esta la laptop en la wifi?' }
+    $ip = $cfg.IPv4Address.IPAddress
+    $apiUrl = "http://${ip}:8000"
+}
 Write-Host "API_URL=$apiUrl"
 
 # Llave de MapTiler desde .env (no se sube a git). Sin llave, el mapa usa OSM.

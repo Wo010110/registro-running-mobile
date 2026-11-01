@@ -2,15 +2,10 @@
 // esto se conecta a la base local / API cuando exista su función y este
 // archivo desaparece.
 
-/// Distancia y mejor tiempo (null = aún sin récord).
-const recordsEjemplo = <(String, String?)>[
-  ('1 km', '06:10'),
-  ('5 km', '33:45'),
-  ('10 km', '01:25:40'),
-  ('21 km', null),
-  ('42 km', null),
-  ('100 km', null),
-];
+// shortcut: seguidores y seguidos de ejemplo (y las medallas de abajo en el
+// Perfil) hasta que exista la nube; entonces vienen de la API.
+const seguidoresEjemplo = 128;
+const siguiendoEjemplo = 96;
 
 class RetoEjemplo {
   const RetoEjemplo(this.titulo, this.detalle, this.progreso, this.meta);

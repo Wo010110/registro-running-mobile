@@ -75,12 +75,39 @@ class CarreraLocal {
   final int? intensidad;
 }
 
+/// Mejor tiempo en una distancia y la actividad donde se hizo.
+class RecordPersonal {
+  const RecordPersonal({
+    required this.objetivoM,
+    required this.tiempoS,
+    required this.carreraId,
+    required this.inicioUtc,
+  });
+
+  final double objetivoM;
+  final double tiempoS;
+  final String carreraId;
+  final DateTime inicioUtc;
+
+  /// Ritmo medio del récord, en segundos por km.
+  double get ritmoSKm => tiempoS / (objetivoM / 1000);
+}
+
 /// Base local de carreras. Cada punto se escribe al llegar: si el sistema
 /// mata o congela la app, lo grabado hasta ese instante ya está en disco.
 class CarrerasDb {
   CarrerasDb._(this._db);
 
-  static const _version = 4;
+  static const _version = 5;
+
+  static const _crearTramos = '''
+    CREATE TABLE tramos_carrera (
+      carrera_id TEXT NOT NULL
+        REFERENCES carreras(id) ON DELETE CASCADE,
+      objetivo_m REAL NOT NULL,
+      tiempo_s REAL NOT NULL,
+      PRIMARY KEY (carrera_id, objetivo_m)
+    )''';
 
   final Database _db;
 
@@ -106,7 +133,8 @@ class CarrerasDb {
             modo TEXT,
             titulo TEXT,
             descripcion TEXT,
-            intensidad INTEGER
+            intensidad INTEGER,
+            tramos_calculados INTEGER NOT NULL DEFAULT 0
           )''');
         await db.execute('''
           CREATE TABLE puntos (
@@ -130,6 +158,7 @@ class CarrerasDb {
             fin_utc TEXT,
             motivo TEXT NOT NULL DEFAULT 'manual'
           )''');
+        await db.execute(_crearTramos);
         await db.execute(
           'CREATE INDEX idx_puntos_carrera ON puntos(carrera_id)',
         );
@@ -158,6 +187,14 @@ class CarrerasDb {
           await db.execute('ALTER TABLE carreras ADD COLUMN descripcion TEXT');
           await db.execute(
             'ALTER TABLE carreras ADD COLUMN intensidad INTEGER',
+          );
+        }
+        if (viejo < 5) {
+          // Mejores tiempos por distancia de cada actividad (récords); las
+          // anteriores se calculan una vez, ver carrerasSinTramos.
+          await db.execute(_crearTramos);
+          await db.execute(
+            'ALTER TABLE carreras ADD COLUMN tramos_calculados INTEGER NOT NULL DEFAULT 0',
           );
         }
       },
@@ -292,6 +329,66 @@ class CarrerasDb {
       whereArgs: [carreraId],
     );
   });
+
+  /// Guarda los mejores tramos de la carrera (reemplaza los anteriores) y la
+  /// marca como calculada, aunque no haya ninguno.
+  Future<void> guardarTramos(String carreraId, Map<double, double> tramos) =>
+      _db.transaction((tx) async {
+        await tx.delete(
+          'tramos_carrera',
+          where: 'carrera_id = ?',
+          whereArgs: [carreraId],
+        );
+        for (final e in tramos.entries) {
+          await tx.insert('tramos_carrera', {
+            'carrera_id': carreraId,
+            'objetivo_m': e.key,
+            'tiempo_s': e.value,
+          });
+        }
+        await tx.update(
+          'carreras',
+          {'tramos_calculados': 1},
+          where: 'id = ?',
+          whereArgs: [carreraId],
+        );
+      });
+
+  /// Actividades terminadas de la app a las que aún no se les calcularon los
+  /// tramos (las grabadas antes de existir los récords).
+  Future<List<CarreraLocal>> carrerasSinTramos() async {
+    final filas = await _db.query(
+      'carreras',
+      where: 'estado = ? AND origen = ? AND tramos_calculados = 0',
+      whereArgs: [EstadoCarrera.terminada.name, origenApp],
+      orderBy: 'inicio_utc',
+    );
+    return [for (final f in filas) CarreraLocal.desdeFila(f)];
+  }
+
+  /// El mejor tiempo de cada distancia, solo de actividades de correr
+  /// terminadas y grabadas con la app.
+  Future<Map<double, RecordPersonal>> mejoresRecords() async {
+    final filas = await _db.rawQuery('''
+      SELECT t.objetivo_m, t.tiempo_s, c.id, c.inicio_utc
+      FROM tramos_carrera t JOIN carreras c ON c.id = t.carrera_id
+      WHERE c.tipo = 'correr' AND c.origen = 'app' AND c.estado = 'terminada'
+      ORDER BY t.objetivo_m, t.tiempo_s, c.inicio_utc''');
+    final mejores = <double, RecordPersonal>{};
+    for (final f in filas) {
+      final objetivo = (f['objetivo_m']! as num).toDouble();
+      mejores.putIfAbsent(
+        objetivo,
+        () => RecordPersonal(
+          objetivoM: objetivo,
+          tiempoS: (f['tiempo_s']! as num).toDouble(),
+          carreraId: f['id']! as String,
+          inicioUtc: DateTime.parse(f['inicio_utc']! as String),
+        ),
+      );
+    }
+    return mejores;
+  }
 
   Future<CarreraLocal?> carrera(String id) async {
     final filas = await _db.query('carreras', where: 'id = ?', whereArgs: [id]);

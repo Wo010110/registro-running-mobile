@@ -96,7 +96,10 @@ class _MapaRecorridoState extends State<MapaRecorrido>
   @override
   void didUpdateWidget(MapaRecorrido anterior) {
     super.didUpdateWidget(anterior);
-    _actualizarLinea();
+    final cambio = _actualizarLinea();
+    // Sin posición en vivo (resumen, edición) la línea puede llegar después
+    // de construir el mapa: se reencuadra todo el recorrido.
+    if (cambio && !widget.enVivo) _encuadrar();
     _ultimaPos = _actual ?? _ultimaPos;
     if (widget.acercar && !anterior.acercar) {
       _acercarPendiente = true;
@@ -170,14 +173,44 @@ class _MapaRecorridoState extends State<MapaRecorrido>
 
   // shortcut: reconvierte todos los trozos cuando crece la ruta; con ~5400
   // puntos es barato, mejorar solo si se graban actividades de varias horas.
-  void _actualizarLinea() {
+  bool _actualizarLinea() {
     final total = widget.ruta.fold(0, (n, t) => n + t.length);
-    if (total == _puntosLinea && widget.ruta.length == _lineas.length) return;
+    if (total == _puntosLinea && widget.ruta.length == _lineas.length) {
+      return false;
+    }
     _puntosLinea = total;
     _lineas = [
       for (final t in widget.ruta) [for (final p in t) LatLng(p.lat, p.lng)],
     ];
+    return true;
   }
+
+  var _encuadrePendiente = false;
+
+  /// Lleva la cámara, con una animación suave, a todo el recorrido.
+  void _encuadrar() {
+    final puntos = [for (final t in _lineas) ...t];
+    if (puntos.length < 2) return;
+    if (!_listo) {
+      _encuadrePendiente = true;
+      return;
+    }
+    final destino = _ajuste(puntos).fit(_mapa.camera);
+    _centroDesde = _mapa.camera.center;
+    _zoomDesde = _mapa.camera.zoom;
+    _centroHasta = destino.center;
+    _zoomHasta = destino.zoom;
+    _curva = Curves.easeInOutCubic;
+    _sigueVivo = false;
+    _anim.duration = _duracionPaso;
+    _anim.forward(from: 0);
+  }
+
+  CameraFit _ajuste(List<LatLng> puntos) => CameraFit.coordinates(
+    coordinates: puntos,
+    padding: const EdgeInsets.all(32),
+    maxZoom: 18,
+  );
 
   LatLng? get _actual {
     final p = widget.posicion;
@@ -258,13 +291,7 @@ class _MapaRecorridoState extends State<MapaRecorrido>
                 ? 2
                 : (widget.acercar ? _zoomCerca : _zoomGrabando),
             maxZoom: _zoomMax,
-            initialCameraFit: fija
-                ? CameraFit.coordinates(
-                    coordinates: puntos,
-                    padding: const EdgeInsets.all(32),
-                    maxZoom: 18,
-                  )
-                : null,
+            initialCameraFit: fija ? _ajuste(puntos) : null,
             backgroundColor: c.superficie,
             // Grabando (acercar) el mapa queda fijo al punto: solo se permite
             // el zoom con los dedos, así un arrastre sin querer no lo suelta.
@@ -278,6 +305,10 @@ class _MapaRecorridoState extends State<MapaRecorrido>
             onMapReady: () {
               _listo = true;
               if (widget.enVivo) _centrar();
+              if (_encuadrePendiente) {
+                _encuadrePendiente = false;
+                _encuadrar();
+              }
             },
             onPositionChanged: (camara, porGesto) {
               if (porGesto && _anim.isAnimating) _anim.stop();

@@ -8,6 +8,7 @@ import '../../core/historial.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/grabacion_provider.dart';
 import '../../providers/historial_provider.dart';
+import '../../providers/navegacion_provider.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/tarjeta.dart';
 import '../../widgets/tarjeta_actividad.dart';
@@ -120,9 +121,7 @@ class InicioTab extends ConsumerWidget {
                                   ? 6
                                   : 8 + 56 * semana[i] / maximo,
                               decoration: BoxDecoration(
-                                color: semana[i] == 0
-                                    ? c.divisor
-                                    : c.primario,
+                                color: semana[i] == 0 ? c.divisor : c.primario,
                                 borderRadius: BorderRadius.circular(7),
                               ),
                             ),
@@ -143,7 +142,14 @@ class InicioTab extends ConsumerWidget {
             ],
           ),
         ),
-        const TituloSeccion('Última actividad', accion: 'Ver todas'),
+        TituloSeccion(
+          'Última actividad',
+          accion: 'Ver todas',
+          alTocar: () {
+            ref.read(pestanaProvider.notifier).ir(3);
+            ref.read(solicitudHistorialProvider.notifier).pedir();
+          },
+        ),
         if (ultima == null)
           const SinActividades()
         else

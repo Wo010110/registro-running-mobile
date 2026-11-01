@@ -1,53 +1,45 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../models/tipo_actividad.dart';
-import '../../providers/historial_provider.dart';
-import '../../theme/app_colors.dart';
-import '../../widgets/tarjeta_actividad.dart';
+import '../models/tipo_actividad.dart';
+import '../providers/historial_provider.dart';
+import '../theme/app_colors.dart';
+import 'tarjeta_actividad.dart';
 
-class ActividadesTab extends ConsumerStatefulWidget {
-  const ActividadesTab({super.key});
+/// Filtros Todas / Correr / Caminar y la lista de actividades guardadas.
+class HistorialActividades extends ConsumerStatefulWidget {
+  const HistorialActividades({super.key});
 
   @override
-  ConsumerState<ActividadesTab> createState() => _ActividadesTabState();
+  ConsumerState<HistorialActividades> createState() =>
+      _HistorialActividadesState();
 }
 
-class _ActividadesTabState extends ConsumerState<ActividadesTab> {
+class _HistorialActividadesState extends ConsumerState<HistorialActividades> {
   /// null = todas.
   TipoActividad? _filtro;
 
   @override
   Widget build(BuildContext context) {
-    final c = AppColors.of(context);
     final historial = ref.watch(historialProvider);
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          'Actividades',
-          style: TextStyle(
-            color: c.textoPrincipal,
-            fontSize: 28,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-        const SizedBox(height: 16),
-        Row(
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
           children: [
             _Ficha(
               'Todas',
               activa: _filtro == null,
               alTocar: () => setState(() => _filtro = null),
             ),
-            for (final t in TipoActividad.values) ...[
-              const SizedBox(width: 8),
+            for (final t in TipoActividad.values)
               _Ficha(
                 t.etiqueta,
                 activa: _filtro == t,
                 alTocar: () => setState(() => _filtro = t),
               ),
-            ],
           ],
         ),
         const SizedBox(height: 16),
@@ -68,11 +60,7 @@ class _ActividadesTabState extends ConsumerState<ActividadesTab> {
             }
             return [
               for (final a in lista) ...[
-                TarjetaActividad(
-                  key: ValueKey(a.id),
-                  carrera: a,
-                  alto: 96,
-                ),
+                TarjetaActividad(key: ValueKey(a.id), carrera: a, alto: 96),
                 const SizedBox(height: 12),
               ],
             ];
